@@ -1,0 +1,32 @@
+{
+  "name": "backend_trustplay",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "check": "node --check index.js",
+    "test": "node --test \"tests/**/*.test.js\"",
+    "verify:ci": "npm run check && npm test",
+    "verify:security": "node scripts/security-baseline-check.js",
+    "audit:deps": "node scripts/dependency-audit.js"
+  },
+  "keywords": [],
+  "author": "Trustplay",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "google-auth-library": "^10.5.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.0.2",
+    "nodemailer": "^7.0.12"
+  }
+}
