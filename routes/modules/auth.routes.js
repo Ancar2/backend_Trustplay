@@ -22,6 +22,7 @@ router.post(
     registerController.register
 );
 router.get("/users/verify/:token", registerController.verifyEmail);
+router.get("/users/verify-email/:token", registerController.verifyEmail);
 router.post(
     "/users/resend-verification",
     authLimiter,

@@ -14,6 +14,10 @@ const apiRouter = require("./routes/api.router");
 const { validateEnv } = require("./config/env");
 const { startOddswinReconcileScheduler } = require("./services/oddswin/reconcile.service");
 
+const normalizeOrigin = (value) => (
+    typeof value === "string" ? value.trim().replace(/\/+$/, "") : ""
+);
+
 const app = express();
 // Evita exponer tecnologia del servidor en headers HTTP.
 app.disable("x-powered-by");
@@ -37,13 +41,13 @@ const corsOptions = {
     origin: (origin, callback) => {
         // FRONTEND_URL se incluye para permitir el dominio real del frontend en produccion.
         // Tambien se permiten hosts locales para desarrollo.
-        const allowed = [
-            "http://localhost:4200",
-            process.env.FRONTEND_URL
-        ].filter(Boolean);
+        const allowed = new Set([
+            normalizeOrigin("http://localhost:4200"),
+            normalizeOrigin(process.env.FRONTEND_URL)
+        ].filter(Boolean));
 
         // Si no hay origin (curl/postman) o el dominio esta en allowlist, se permite.
-        if (!origin || allowed.includes(origin)) {
+        if (!origin || allowed.has(normalizeOrigin(origin))) {
             callback(null, true);
             return;
         }

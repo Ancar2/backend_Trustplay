@@ -36,6 +36,7 @@ Existe un segundo prefijo para Oddswin: `/api/games/oddswin`
 - Seguridad: publica.
 - Parametro de ruta: `token`.
 - Resultado: activa `isVerified` del usuario.
+- Compatibilidad: tambien acepta `GET /users/verify-email/:token`.
 
 ### `POST /users/resend-verification`
 
