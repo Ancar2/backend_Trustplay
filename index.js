@@ -35,8 +35,7 @@ app.use(limiter);
 // CORS controla que dominios del navegador pueden consumir la API.
 const corsOptions = {
     origin: (origin, callback) => {
-        // FRONTEND_URL se incluye para permitir el dominio real del frontend en produccion.
-        // Tambien se permiten hosts locales para desarrollo.
+        // Dominios permitidos
         const allowed = [
             "http://localhost:4200",
             process.env.FRONTEND_URL

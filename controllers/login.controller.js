@@ -138,8 +138,12 @@ exports.login = async (req, res) => {
             const options = {
                 expires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
                 httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict'
+                secure: process.env.NODE_ENV === 'production',//si es production el valor es true
+                // IMPORTANTE (dominios distintos):
+                // - 'strict' funciona bien cuando front y API comparten mismo dominio.
+                // - Si front y API quedan en dominios distintos, este valor debe cambiarse
+                //   temporalmente a 'none' (y secure debe permanecer true).
+                sameSite: 'none'
             };
 
             res.status(200).cookie('token', token, options).json({
@@ -188,6 +192,10 @@ const sendTokenResponse = (user, statusCode, res) => {
         expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
+        // IMPORTANTE (dominios distintos):
+        // - 'strict' funciona bien cuando front y API comparten mismo dominio.
+        // - Si front y API quedan en dominios distintos, este valor debe cambiarse
+        //   temporalmente a 'none' (y secure debe permanecer true).
         sameSite: 'strict'
     };
     const responsePayload = {
