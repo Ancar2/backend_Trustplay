@@ -10,7 +10,6 @@
     "seed:legal": "node scripts/seed-legal-documents.js",
     "cleanup:trustplay-legal-legacy": "node scripts/cleanup-legacy-trustplay-legal.js",
     "verify:ci": "npm run check && npm test",
-    "verify:security": "node scripts/security-baseline-check.js",
     "audit:deps": "node scripts/dependency-audit.js"
   },
   "keywords": [],
