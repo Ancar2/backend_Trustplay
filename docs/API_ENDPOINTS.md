@@ -214,21 +214,69 @@ Existe un segundo prefijo para Oddswin: `/api/games/oddswin`
 - Seguridad: `JWT` + `Admin`.
 - Resultado: marca `cancelRequested=true` y el proceso se detiene al terminar el lote actual.
 
-## Informacion institucional de Trustplay
+## Versionado legal (fuente de verdad backend)
+
+### `GET /legal/documents`
+
+- Uso: listar documentos legales vigentes por `key` con su versión actual.
+- Seguridad: pública (si hay sesión, incluye estado de aceptación del usuario actual).
+- Resultado:
+  - `documents[]` con `key`, `title`, `status`, `currentVersion`.
+  - `hasPending` y `pendingDocuments[]` cuando hay usuario autenticado.
+
+### `GET /legal/documents/:key`
+
+- Uso: obtener contenido y metadata de la versión vigente de un documento legal.
+- Seguridad: pública (si hay sesión, incluye si el usuario ya aceptó esa versión).
+- Resultado: `document` con `currentVersion` (`id`, `version`, `effectiveAt`, `publishedAt`, `sha256`, `changeSummary`, `contentUrl`, `contentHtml`).
+
+### `POST /legal/accept`
+
+- Uso: registrar aceptación auditable de una versión legal.
+- Seguridad: `JWT`.
+- Cuerpo requerido:
+  - `documentKey`
+  - `versionId`
+  - `source` (opcional, por ejemplo `legal_center`, `login_form`, `register_form`)
+- Evidencia registrada:
+  - `userId`, `documentKey`, `versionId`, `version`, `sha256`, `acceptedAt`, `ip`, `userAgent`.
+
+### `GET /legal/documents/:key/versions`
+
+- Uso: consultar historial de versiones de un documento legal.
+- Seguridad: `JWT` + `Admin`.
+
+### `POST /legal/documents/:key/versions`
+
+- Uso: crear una nueva versión legal para un documento.
+- Seguridad: `JWT` + `Admin`.
+- Cuerpo requerido:
+  - `version`
+  - `contentUrl` o `contentHtml`
+- Cuerpo opcional:
+  - `title`, `effectiveAt`, `changeSummary`, `publish`
+
+### `PUT /legal/documents/:key/versions/:versionId/publish`
+
+- Uso: publicar y activar una versión como vigente.
+- Seguridad: `JWT` + `Admin`.
+
+## Informacion institucional de Trustplay (legacy)
 
 ### `GET /trustplay-info`
 
-- Uso: obtener informacion legal y enlaces institucionales.
+- Uso: obtener enlaces institucionales legacy.
 - Seguridad: publica.
+- Resultado: `info` con `legal[]` (enlaces construidos desde `/api/legal/documents`) y `social[]`.
 
 ### `PUT /trustplay-info`
 
-- Uso: actualizar informacion legal y social de plataforma.
+- Uso: actualizar enlaces sociales institucionales.
 - Seguridad: `JWT` + `Admin`.
 - Cuerpo esperado:
-  - opcional `legal` (arreglo)
   - opcional `social` (arreglo)
-  - opcional `legalVersion` (texto)
+- Nota: los campos `legal`, `legalVersion` y `legalVersions` fueron descontinuados en este endpoint.
+- Gestion legal vigente: usar `/legal/documents`, `/legal/documents/:key/versions` y `/legal/accept`.
 
 ### `GET /legal/acceptance-audit`
 
@@ -236,10 +284,10 @@ Existe un segundo prefijo para Oddswin: `/api/games/oddswin`
 - Seguridad: `JWT` + `Admin`.
 - Query opcional:
   - `page`, `limit`
-  - `email`
   - `userId`
-  - `legalVersion`
-  - `source` (`register_form`, `login_form`, `social_login`)
+  - `documentKey`
+  - `version`
+  - `source`
 
 ## Configuracion global
 

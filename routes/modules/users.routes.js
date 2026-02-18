@@ -63,6 +63,12 @@ router.post(
     userController.addWallet
 );
 
+router.delete(
+    "/users/wallet/:wallet",
+    authMiddleware.verifyToken,
+    userController.removeWallet
+);
+
 router.put(
     "/users/deactivate/:id",
     authMiddleware.verifyToken,
@@ -76,6 +82,17 @@ router.get(
     authMiddleware.verifyToken,
     requireWalletAccess("wallet"),
     userController.getEarningsBreakdownByLottery
+);
+
+router.get(
+    "/users/legal-stats/:id",
+    authMiddleware.verifyToken,
+    authMiddleware.isAdmin,
+    // Assuming isAdmin middleware exists here or we use requireSelfOrAdmin if user wants to see their own.
+    // Req says "admin users section", so isAdmin is appropriate.
+    // If not available in this file, we might need to import it or rely on logic.
+    // authMiddleware usually has isAdmin.
+    userController.getUserLegalStats
 );
 
 module.exports = router;

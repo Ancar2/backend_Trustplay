@@ -37,15 +37,39 @@ const validateRequest = (validator) => (req, res, next) => {
 
 const validateRegisterBody = (req) => {
     const errors = [];
-    const { username, email, password, sponsor, photo, legalAcceptance } = req.body || {};
+    const { username, email, password, phone, marketingConsent, sponsor, photo, legalAcceptance } = req.body || {};
 
     if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
     if (!isNonEmptyString(username)) errors.push("username es requerido.");
     if (!isNonEmptyString(email)) errors.push("email es requerido.");
     if (!isNonEmptyString(password)) errors.push("password es requerido.");
+    if (!isPlainObject(phone)) errors.push("phone es requerido y debe ser un objeto.");
     if (typeof username === "string" && username.trim().length > 64) errors.push("username excede 64 caracteres.");
     if (typeof email === "string" && email.trim().length > 254) errors.push("email excede 254 caracteres.");
     if (typeof password === "string" && password.length > 256) errors.push("password excede 256 caracteres.");
+
+    if (isPlainObject(phone)) {
+        const countryCode = typeof phone.countryCode === "string" ? phone.countryCode.trim() : "";
+        const nationalNumber = typeof phone.nationalNumber === "string" ? phone.nationalNumber.trim() : "";
+
+        if (!countryCode) errors.push("phone.countryCode es requerido.");
+        if (!nationalNumber) errors.push("phone.nationalNumber es requerido.");
+        if (countryCode && !/^\+[1-9]\d{0,3}$/.test(countryCode)) {
+            errors.push("phone.countryCode no tiene formato válido.");
+        }
+        if (nationalNumber && !/^\d{6,15}$/.test(nationalNumber)) {
+            errors.push("phone.nationalNumber no tiene formato válido.");
+        }
+    }
+
+    if (marketingConsent !== undefined && marketingConsent !== null && !isPlainObject(marketingConsent)) {
+        errors.push("marketingConsent debe ser un objeto.");
+    }
+
+    if (isPlainObject(marketingConsent) && marketingConsent.accepted !== true) {
+        errors.push("marketingConsent.accepted debe ser true cuando se envía.");
+    }
+
     if (sponsor !== undefined && sponsor !== null && typeof sponsor !== "string") errors.push("sponsor debe ser string.");
     if (photo !== undefined && photo !== null && typeof photo !== "string") errors.push("photo debe ser string.");
     if (legalAcceptance !== undefined && !isPlainObject(legalAcceptance)) {
@@ -339,13 +363,88 @@ const validateConfigUpdateBody = (req) => {
 
 const validateTrustplayUpdateBody = (req) => {
     const errors = [];
-    const { legal, social, legalVersion } = req.body || {};
+    const { legal, social, legalVersion, legalVersions } = req.body || {};
 
     if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
-    if (legal !== undefined && !Array.isArray(legal)) errors.push("legal debe ser un arreglo.");
     if (social !== undefined && !Array.isArray(social)) errors.push("social debe ser un arreglo.");
-    if (legalVersion !== undefined && legalVersion !== null && typeof legalVersion !== "string") {
-        errors.push("legalVersion debe ser string.");
+
+    if (legal !== undefined || legalVersion !== undefined || legalVersions !== undefined) {
+        errors.push("Los campos legales se gestionan en /api/legal/*, no en /trustplay-info.");
+    }
+
+    return errors;
+};
+
+const validateLegalAcceptBody = (req) => {
+    const errors = [];
+    const { documentKey, versionId, source } = req.body || {};
+
+    if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
+
+    if (!isNonEmptyString(documentKey)) {
+        errors.push("documentKey es requerido.");
+    } else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(documentKey.trim().toLowerCase())) {
+        errors.push("documentKey debe tener formato slug (ej: terms, privacy).");
+    }
+
+    if (!isNonEmptyString(versionId)) {
+        errors.push("versionId es requerido.");
+    } else if (!/^[a-fA-F0-9]{24}$/.test(versionId.trim())) {
+        errors.push("versionId debe ser un ObjectId válido.");
+    }
+
+    if (source !== undefined && source !== null && typeof source !== "string") {
+        errors.push("source debe ser string.");
+    }
+
+    return errors;
+};
+
+const validateLegalCreateVersionBody = (req) => {
+    const errors = [];
+    const { title, version, effectiveAt, contentUrl, contentHtml, changeSummary, publish } = req.body || {};
+
+    if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
+
+    if (title !== undefined && title !== null && typeof title !== "string") {
+        errors.push("title debe ser string.");
+    }
+    if (!isNonEmptyString(version)) {
+        errors.push("version es requerida.");
+    } else if (!/^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$/.test(version.trim())) {
+        errors.push("version tiene formato inválido.");
+    }
+
+    if (effectiveAt !== undefined && effectiveAt !== null) {
+        const parsed = new Date(effectiveAt);
+        if (Number.isNaN(parsed.getTime())) {
+            errors.push("effectiveAt debe ser una fecha válida.");
+        }
+    }
+
+    if (contentUrl !== undefined && contentUrl !== null && typeof contentUrl !== "string") {
+        errors.push("contentUrl debe ser string.");
+    }
+    if (contentHtml !== undefined && contentHtml !== null && typeof contentHtml !== "string") {
+        errors.push("contentHtml debe ser string.");
+    }
+
+    const hasUrl = typeof contentUrl === "string" && contentUrl.trim().length > 0;
+    const hasHtml = typeof contentHtml === "string" && contentHtml.trim().length > 0;
+    if (!hasUrl && !hasHtml) {
+        errors.push("Debes enviar contentUrl o contentHtml.");
+    }
+
+    if (changeSummary !== undefined && changeSummary !== null) {
+        if (typeof changeSummary !== "string") {
+            errors.push("changeSummary debe ser string.");
+        } else if (changeSummary.trim().length > 500) {
+            errors.push("changeSummary excede 500 caracteres.");
+        }
+    }
+
+    if (publish !== undefined && typeof publish !== "boolean") {
+        errors.push("publish debe ser boolean.");
     }
 
     return errors;
@@ -463,6 +562,8 @@ module.exports = {
         claimRecordBody: validateClaimRecordBody,
         configUpdateBody: validateConfigUpdateBody,
         trustplayUpdateBody: validateTrustplayUpdateBody,
+        legalAcceptBody: validateLegalAcceptBody,
+        legalCreateVersionBody: validateLegalCreateVersionBody,
         reconcileBody: validateReconcileBody,
         reconcileLotteriesBody: validateReconcileLotteriesBody
     }

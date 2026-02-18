@@ -1,4 +1,20 @@
 const jwt = require('jsonwebtoken');
+const { listDocuments } = require('../services/legal/legal.service');
+
+const isLegalGuardExemptPath = (req) => {
+    const path = String(req?.originalUrl || req?.url || '').split('?')[0];
+    if (!path) return false;
+    if (path.startsWith('/api/legal')) return true;
+    if (path === '/api/users/me') return true;
+    return false;
+};
+
+const buildLegalGuardResponse = (pendingDocuments = []) => ({
+    msj: 'Debes aceptar los documentos legales vigentes para continuar.',
+    code: 'LEGAL_ACCEPTANCE_REQUIRED',
+    pendingDocuments,
+    legalVersion: pendingDocuments[0]?.version || ''
+});
 
 // Middleware Principal de Autenticación
 // Verifica que el Request incluya un Token JWT válido en Cookies o Headers.
@@ -17,12 +33,30 @@ exports.verifyToken = (req, res, next) => {
             return res.status(401).json({ msj: 'Token no proporcionado' });
         }
 
-        jwt.verify(token, process.env.SECRET_JWT_KEY, (err, decoded) => {
+        jwt.verify(token, process.env.SECRET_JWT_KEY, async (err, decoded) => {
             if (err) {
                 return res.status(401).json({ msj: 'Token inválido o expirado' });
             }
+            if (!decoded?.id) {
+                return res.status(401).json({ msj: 'Token inválido o expirado' });
+            }
             req.user = decoded;
-            next();
+
+            if (String(decoded.role || '').toLowerCase() === 'admin' || isLegalGuardExemptPath(req)) {
+                return next();
+            }
+
+            try {
+                const legalStatus = await listDocuments({ userId: decoded.id });
+                if (legalStatus?.hasPending === true) {
+                    return res.status(403).json(buildLegalGuardResponse(legalStatus.pendingDocuments || []));
+                }
+            } catch (error) {
+                // Si hay un problema temporal consultando legales, no bloqueamos todo el tráfico autenticado.
+                console.error('Error validando aceptación legal en middleware JWT:', error);
+            }
+
+            return next();
         });
     } catch (error) {
         return res.status(500).json({ msj: 'Error en la autenticación' });

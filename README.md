@@ -181,3 +181,23 @@ Dashboard exclusivo para administradores.
 5. **Input Validation**: Todos los endpoints validan los datos de entrada antes de procesar.
 
 6. **Error Handling**: Los errores internos se registran en el servidor (`console.error`) pero al cliente solo se le muestra un mensaje genérico para evitar fuga de información sensible.
+
+---
+
+## Versionado legal
+
+El módulo legal ahora se maneja con tres colecciones auditables:
+
+- `legal_documents`: define el documento (`key`, `title`, `currentVersionId`, `status`).
+- `legal_document_versions`: versionado por documento (`version`, `effectiveAt`, `contentUrl/contentHtml`, `sha256`, `isPublished`).
+- `legal_acceptances`: evidencia de aceptación por usuario (`userId`, `documentKey`, `versionId`, `sha256`, `acceptedAt`, `ip`, `userAgent`).
+
+Flujo recomendado:
+
+1. Admin crea versión con `POST /api/legal/documents/:key/versions`.
+2. Admin publica versión con `PUT /api/legal/documents/:key/versions/:versionId/publish`.
+3. Usuario consulta `GET /api/legal/documents` y acepta con `POST /api/legal/accept`.
+
+Seed de ejemplo:
+
+- Ejecutar `npm run seed:legal` para cargar `terms` y `privacy` con versiones `1.0.0` y `1.1.0`.

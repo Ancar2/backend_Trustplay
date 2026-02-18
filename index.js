@@ -13,6 +13,7 @@ const connectionDB = require("./config/db");
 const apiRouter = require("./routes/api.router");
 const { validateEnv } = require("./config/env");
 const { startOddswinReconcileScheduler } = require("./services/oddswin/reconcile.service");
+const { seedLegalDocuments } = require("./services/legal/legal.service");
 
 const app = express();
 // Evita exponer tecnologia del servidor en headers HTTP.
@@ -88,6 +89,8 @@ const startServer = async () => {
     validateEnv();
     // Conecta base de datos antes de aceptar trafico.
     await connectionDB();
+    // Asegura documentos legales base versionados para no dejar auth bloqueado.
+    await seedLegalDocuments();
     // Si esta habilitado por variables de entorno, inicia la reconciliacion automatica.
     startOddswinReconcileScheduler();
 

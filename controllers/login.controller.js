@@ -3,54 +3,43 @@ const jwt = require("jsonwebtoken");
 const { OAuth2Client } = require('google-auth-library');
 const axios = require('axios');
 const {
-    getCurrentLegalVersion,
-    validateLegalAcceptance,
-    buildLegalAcceptanceRecord,
-    registerLegalAcceptanceAudit
-} = require('../utils/legalAcceptance');
+    ensureCurrentLegalAcceptanceForUser,
+    ensureNewUserLegalAcceptance,
+    registerCurrentLegalAcceptanceForNewUser
+} = require("../services/legal/legal.service");
 
-const hasAllLegalAcknowledgements = (acknowledgements = {}) => (
-    acknowledgements.terms === true
-    && acknowledgements.privacy === true
-    && acknowledgements.cookies === true
-    && acknowledgements.disclaimer === true
-);
-
-const hasCurrentLegalAcceptance = (user, currentLegalVersion) => (
-    user?.legalAcceptance?.accepted === true
-    && user?.legalAcceptance?.version === currentLegalVersion
-    && hasAllLegalAcknowledgements(user?.legalAcceptance?.acknowledgements)
-);
-
-const applyLegalAcceptanceIfRequired = ({
+const applyLegalAcceptanceIfRequired = async ({
     user,
     legalAcceptancePayload,
-    currentLegalVersion,
     req,
     source
-}) => {
-    if (hasCurrentLegalAcceptance(user, currentLegalVersion)) {
-        return { ok: true, updated: false };
-    }
-
-    const legalValidation = validateLegalAcceptance(legalAcceptancePayload, currentLegalVersion);
-    if (!legalValidation.ok) {
-        return { ok: false, msg: legalValidation.msg };
-    }
-
-    user.legalAcceptance = buildLegalAcceptanceRecord({
-        normalized: legalValidation.normalized,
+}) => (
+    ensureCurrentLegalAcceptanceForUser({
+        userId: user?._id,
+        legalAcceptancePayload,
+        req,
         source,
-        req
-    });
+    })
+);
 
-    return { ok: true, updated: true };
+const buildLegalRequiredErrorPayload = (legalResolution) => {
+    const pendingDocuments = Array.isArray(legalResolution?.pendingDocuments)
+        ? legalResolution.pendingDocuments
+        : [];
+
+    return {
+        error: legalResolution?.msg || "Debes aceptar los documentos legales vigentes para continuar.",
+        code: "LEGAL_ACCEPTANCE_REQUIRED",
+        pendingDocuments,
+        legalVersion: pendingDocuments[0]?.version || ""
+    };
 };
 
 const toSafeUserPayload = (user) => ({
     _id: user._id,
     username: user.username,
     email: user.email,
+    phone: user.phone || null,
     role: user.role,
     photo: user.photo || "",
     providers: user.providers || [],
@@ -60,7 +49,7 @@ const toSafeUserPayload = (user) => ({
     isLoggedIn: Boolean(user.isLoggedIn),
     isVerified: Boolean(user.isVerified),
     isActive: user.isActive !== false,
-    legalAcceptance: user.legalAcceptance || null,
+    marketingConsent: user.marketingConsent || null,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt
 });
@@ -92,32 +81,20 @@ exports.login = async (req, res) => {
                 });
             }
 
-            const currentLegalVersion = await getCurrentLegalVersion();
-            const legalResolution = applyLegalAcceptanceIfRequired({
+            const legalResolution = await applyLegalAcceptanceIfRequired({
                 user,
                 legalAcceptancePayload: legalAcceptance,
-                currentLegalVersion,
                 req,
                 source: 'login_form'
             });
 
             if (!legalResolution.ok) {
-                return res.status(400).json({
-                    error: legalResolution.msg,
-                    code: 'LEGAL_ACCEPTANCE_REQUIRED',
-                    legalVersion: currentLegalVersion
-                });
+                return res.status(400).json(buildLegalRequiredErrorPayload(legalResolution));
             }
 
             // Marcar usuario como logueado
             user.isLoggedIn = true;
             await user.save();
-            if (legalResolution.updated) {
-                await registerLegalAcceptanceAudit({
-                    user,
-                    legalAcceptance: user.legalAcceptance
-                });
-            }
 
             // Generar Token JWT
             const token = jwt.sign(
@@ -135,21 +112,26 @@ exports.login = async (req, res) => {
             );
 
             // Set cookie
+            // Set cookie
+            const isProduction = process.env.NODE_ENV === 'production';
             const options = {
                 expires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
                 httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',//si es production el valor es true
-                // IMPORTANTE (dominios distintos):
-                // - 'strict' funciona bien cuando front y API comparten mismo dominio.
-                // - Si front y API quedan en dominios distintos, este valor debe cambiarse
-                //   temporalmente a 'none' (y secure debe permanecer true).
-                sameSite: 'none'
+                secure: isProduction, // true in production, false in dev
+                sameSite: isProduction ? 'none' : 'lax' // 'none' requires secure=true. 'lax' works for localhost dev.
             };
 
-            res.status(200).cookie('token', token, options).json({
+            const exposeTokenInBody = process.env.EXPOSE_TOKEN_IN_BODY !== "false";
+            const responsePayload = {
                 Welcome: `Bienvenido a ODDSWIN ${user.username}`,
                 user: toSafeUserPayload(user)
-            });
+            };
+
+            if (exposeTokenInBody) {
+                responsePayload.token = token;
+            }
+
+            res.status(200).cookie('token', token, options).json(responsePayload);
 
         } else {
             return res.status(401).json({ error: "Credenciales inválidas" });
@@ -311,21 +293,15 @@ exports.socialLogin = async (req, res) => {
 
         // LOGIN / REGISTRO
         if (user) {
-            const currentLegalVersion = await getCurrentLegalVersion();
-            const legalResolution = applyLegalAcceptanceIfRequired({
+            const legalResolution = await applyLegalAcceptanceIfRequired({
                 user,
                 legalAcceptancePayload: legalAcceptance,
-                currentLegalVersion,
                 req,
                 source: 'social_login'
             });
 
             if (!legalResolution.ok) {
-                return res.status(400).json({
-                    error: legalResolution.msg,
-                    code: 'LEGAL_ACCEPTANCE_REQUIRED',
-                    legalVersion: currentLegalVersion
-                });
+                return res.status(400).json(buildLegalRequiredErrorPayload(legalResolution));
             }
 
             // Actualizar Foto (REGLA: Siempre sobrescribir)
@@ -340,23 +316,14 @@ exports.socialLogin = async (req, res) => {
             }
 
             await user.save();
-            if (legalResolution.updated) {
-                await registerLegalAcceptanceAudit({
-                    user,
-                    legalAcceptance: user.legalAcceptance
-                });
-            }
             sendTokenResponse(user, 200, res);
 
         } else {
-            const currentLegalVersion = await getCurrentLegalVersion();
-            const legalValidation = validateLegalAcceptance(legalAcceptance, currentLegalVersion);
+            const legalValidation = await ensureNewUserLegalAcceptance({
+                legalAcceptancePayload: legalAcceptance
+            });
             if (!legalValidation.ok) {
-                return res.status(400).json({
-                    error: legalValidation.msg,
-                    code: 'LEGAL_ACCEPTANCE_REQUIRED',
-                    legalVersion: currentLegalVersion
-                });
+                return res.status(400).json(buildLegalRequiredErrorPayload(legalValidation));
             }
 
             // Crear nuevo usuario
@@ -366,17 +333,13 @@ exports.socialLogin = async (req, res) => {
                 photo: profile.picture || "",
                 providers: [{ name: provider, id: profile.id }],
                 isLoggedIn: true,
-                isVerified: true, // Social login implies verification
-                legalAcceptance: buildLegalAcceptanceRecord({
-                    normalized: legalValidation.normalized,
-                    source: 'social_login',
-                    req
-                })
+                isVerified: true // Social login implies verification
             });
             await newUser.save();
-            await registerLegalAcceptanceAudit({
-                user: newUser,
-                legalAcceptance: newUser.legalAcceptance
+            await registerCurrentLegalAcceptanceForNewUser({
+                userId: newUser._id,
+                req,
+                source: "social_login"
             });
             sendTokenResponse(newUser, 201, res);
         }
@@ -422,14 +385,11 @@ exports.completeSocialLogin = async (req, res) => {
         }
 
         // Crear usuario nuevo con el email proporcionado
-        const currentLegalVersion = await getCurrentLegalVersion();
-        const legalValidation = validateLegalAcceptance(legalAcceptance, currentLegalVersion);
+        const legalValidation = await ensureNewUserLegalAcceptance({
+            legalAcceptancePayload: legalAcceptance
+        });
         if (!legalValidation.ok) {
-            return res.status(400).json({
-                error: legalValidation.msg,
-                code: 'LEGAL_ACCEPTANCE_REQUIRED',
-                legalVersion: currentLegalVersion
-            });
+            return res.status(400).json(buildLegalRequiredErrorPayload(legalValidation));
         }
 
         const newUser = new User({
@@ -438,17 +398,14 @@ exports.completeSocialLogin = async (req, res) => {
             photo: "", // Instagram Basic no dio foto, o se perdió
             providers: [{ name: providerData.provider, id: providerData.id }],
             isLoggedIn: true,
-            legalAcceptance: buildLegalAcceptanceRecord({
-                normalized: legalValidation.normalized,
-                source: 'social_login',
-                req
-            })
+            isVerified: true
         });
 
         await newUser.save();
-        await registerLegalAcceptanceAudit({
-            user: newUser,
-            legalAcceptance: newUser.legalAcceptance
+        await registerCurrentLegalAcceptanceForNewUser({
+            userId: newUser._id,
+            req,
+            source: "social_login"
         });
         sendTokenResponse(newUser, 201, res);
 

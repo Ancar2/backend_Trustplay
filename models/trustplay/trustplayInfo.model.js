@@ -14,9 +14,8 @@ const footerLinkSchema = new Schema(
 
 const trustplayInfoSchema = new Schema(
     {
-        legalVersion: { type: String, default: 'LEGAL-TP-2026-02', trim: true },
-        legalUpdatedAt: { type: Date, default: Date.now },
-        legal: { type: [footerLinkSchema], default: [] },
+        // TrustplayInfo solo conserva metadatos institucionales no legales.
+        // La fuente de verdad legal es /api/legal/*.
         social: { type: [footerLinkSchema], default: [] }
     },
     {

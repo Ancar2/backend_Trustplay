@@ -127,6 +127,7 @@ exports.getAllUsers = async (req, res) => {
                     _id: "$_id",
                     username: { $first: "$username" },
                     email: { $first: "$email" },
+                    phone: { $first: "$phone" },
                     photo: { $first: "$photo" },
                     wallets: { $first: "$wallets" },
                     isActive: { $first: "$isActive" },

@@ -21,7 +21,7 @@ const toValidDate = (value) => {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
-const EVENT_VIDEO_MATCH_WINDOW_MS = 18 * 60 * 60 * 1000;
+
 const YOUTUBE_VIDEO_ID_REGEX = /^[a-zA-Z0-9_-]{11}$/;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const ERC20_TRANSFER_TOPIC = ethers.id("Transfer(address,address,uint256)");
@@ -57,40 +57,11 @@ const buildCanonicalYoutubeEmbedUrl = (videoIdRaw) => {
     return `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
 };
 
-const hasRecordedVideo = (drawEvent) => (
-    Boolean(
-        drawEvent
-        && typeof drawEvent.videoId === "string"
-        && YOUTUBE_VIDEO_ID_REGEX.test(drawEvent.videoId.trim())
-    )
-);
 
-const shouldCaptureEventVideo = ({ lotteryScheduledAtIso, youtubeScheduledAtIso }) => {
-    if (!lotteryScheduledAtIso || !youtubeScheduledAtIso) return false;
 
-    const lotteryMs = new Date(lotteryScheduledAtIso).getTime();
-    const youtubeMs = new Date(youtubeScheduledAtIso).getTime();
 
-    if (!Number.isFinite(lotteryMs) || !Number.isFinite(youtubeMs)) return false;
-    return Math.abs(youtubeMs - lotteryMs) <= EVENT_VIDEO_MATCH_WINDOW_MS;
-};
 
-const buildRecordedLivePayload = ({ drawEvent, scheduledAt, checkedAt }) => {
-    const normalizedVideoId = extractYoutubeVideoId(drawEvent?.videoId || "");
-    return {
-        ok: true,
-        status: "recorded",
-        scheduledAt,
-        timezone: drawEvent?.timezone || DEFAULT_TIMEZONE,
-        source: "lottery_recorded_video",
-        cached: true,
-        checkedAt: checkedAt || new Date().toISOString(),
-        videoId: normalizedVideoId,
-        title: String(drawEvent?.videoTitle || "Resultado oficial"),
-        embedUrl: buildCanonicalYoutubeEmbedUrl(normalizedVideoId),
-        lotteryScheduledAt: scheduledAt,
-    };
-};
+
 
 const extractYoutubeVideoId = (rawValue) => {
     const input = String(rawValue || "").trim();
@@ -630,88 +601,22 @@ exports.announceLotteryEvent = async (req, res) => {
     }
 };
 
-exports.setLotteryResultVideo = async (req, res) => {
-    try {
-        const { address } = req.params;
-        const normalizedAddress = String(address || "").toLowerCase().trim();
-        const videoUrlRaw = String(req.body?.videoUrl || "").trim();
-        const videoTitleRaw = String(req.body?.videoTitle || "").trim();
-
-        if (!normalizedAddress) {
-            return res.status(400).json({ msj: "Dirección de lotería inválida" });
-        }
-
-        const videoId = extractYoutubeVideoId(videoUrlRaw);
-        if (!videoId) {
-            return res.status(400).json({ msj: "videoUrl inválido. Debe ser un enlace/videoId de YouTube válido." });
-        }
-
-        const lottery = await Lottery.findOne({ address: normalizedAddress });
-        if (!lottery) {
-            return res.status(404).json({ msj: "Lotería no encontrada para fijar video" });
-        }
-
-        const currentDrawEvent = lottery.drawEvent && typeof lottery.drawEvent.toObject === "function"
-            ? lottery.drawEvent.toObject()
-            : (lottery.drawEvent || {});
-
-        const now = new Date();
-        const resolvedTitle = videoTitleRaw || currentDrawEvent.videoTitle || `Resultados oficiales - ${lottery.symbol || "Lotería"}`;
-
-        lottery.drawEvent = {
-            ...currentDrawEvent,
-            videoId,
-            videoTitle: resolvedTitle,
-            videoEmbedUrl: buildCanonicalYoutubeEmbedUrl(videoId),
-            videoDetectedAt: now,
-            resultLocked: true,
-            resultLockedAt: now,
-            timezone: currentDrawEvent.timezone || DEFAULT_TIMEZONE,
-        };
-
-        await lottery.save();
-
-        return res.status(200).json({
-            ok: true,
-            msj: "Video oficial fijado correctamente para esta lotería",
-            lotteryAddress: lottery.address,
-            drawEvent: lottery.drawEvent,
-        });
-    } catch (error) {
-        console.error("Error setLotteryResultVideo:", error);
-        return res.status(500).json({ msj: "Error interno fijando video oficial" });
-    }
-};
-
 exports.getNextLive = async (req, res) => {
     try {
         const forceRaw = String(req.query?.force || "").toLowerCase();
         const forceRefresh = forceRaw === "1" || forceRaw === "true";
         const lotteryAddress = String(req.query?.lotteryAddress || "").toLowerCase().trim();
         const hasLotteryAddress = /^0x[a-f0-9]{40}$/i.test(lotteryAddress);
-        const checkedAtNow = new Date().toISOString();
 
-        let lottery = null;
-        let drawEvent = {};
         let lotteryScheduledAtIso = "";
 
         if (hasLotteryAddress) {
-            lottery = await Lottery.findOne({ address: lotteryAddress }).select("drawEvent");
-            drawEvent = lottery?.drawEvent && typeof lottery.drawEvent.toObject === "function"
+            const lottery = await Lottery.findOne({ address: lotteryAddress }).select("drawEvent");
+            const drawEvent = lottery?.drawEvent && typeof lottery.drawEvent.toObject === "function"
                 ? lottery.drawEvent.toObject()
                 : (lottery?.drawEvent || {});
 
             lotteryScheduledAtIso = toIsoOrEmpty(drawEvent?.scheduledAt);
-
-            if (drawEvent?.resultLocked && hasRecordedVideo(drawEvent)) {
-                return res.status(200).json(
-                    buildRecordedLivePayload({
-                        drawEvent,
-                        scheduledAt: lotteryScheduledAtIso || getNextFridayAt11PmBogotaIso(),
-                        checkedAt: checkedAtNow,
-                    })
-                );
-            }
         }
 
         const payload = await getNextLiveWithCache({ forceRefresh });
@@ -737,91 +642,7 @@ exports.getNextLive = async (req, res) => {
             }
         }
 
-        if (hasLotteryAddress && lottery) {
-            const hasYoutubeVideo = Boolean(normalizedResponseVideoId);
 
-            const shouldStoreVideo = hasYoutubeVideo && shouldCaptureEventVideo({
-                lotteryScheduledAtIso,
-                youtubeScheduledAtIso: String(response.scheduledAt || "").trim(),
-            });
-
-            if (shouldStoreVideo) {
-                const normalizedVideoId = normalizedResponseVideoId;
-                const normalizedTitle = String(response.title || "").trim();
-                const normalizedEmbedUrl = normalizedResponseEmbedUrl;
-                const shouldPersistDetectedVideo = (
-                    String(drawEvent?.videoId || "") !== normalizedVideoId
-                    || String(drawEvent?.videoTitle || "") !== normalizedTitle
-                    || String(drawEvent?.videoEmbedUrl || "") !== normalizedEmbedUrl
-                    || !drawEvent?.videoDetectedAt
-                    || drawEvent?.resultLocked === true
-                );
-
-                if (shouldPersistDetectedVideo) {
-                    const detectedAt = new Date();
-                    await Lottery.updateOne(
-                        { address: lotteryAddress },
-                        {
-                            $set: {
-                                "drawEvent.videoId": normalizedVideoId,
-                                "drawEvent.videoTitle": normalizedTitle,
-                                "drawEvent.videoEmbedUrl": normalizedEmbedUrl,
-                                "drawEvent.videoDetectedAt": detectedAt,
-                                "drawEvent.resultLocked": false,
-                                "drawEvent.resultLockedAt": null,
-                            }
-                        }
-                    );
-
-                    drawEvent = {
-                        ...drawEvent,
-                        videoId: normalizedVideoId,
-                        videoTitle: normalizedTitle,
-                        videoEmbedUrl: normalizedEmbedUrl,
-                        videoDetectedAt: detectedAt,
-                        resultLocked: false,
-                        resultLockedAt: null,
-                    };
-                }
-            }
-
-            const scheduledMs = lotteryScheduledAtIso ? new Date(lotteryScheduledAtIso).getTime() : NaN;
-            const shouldLockRecordedResult = (
-                Number.isFinite(scheduledMs)
-                && Date.now() >= scheduledMs
-                && response.status !== "live"
-                && hasRecordedVideo(drawEvent)
-            );
-
-            if (shouldLockRecordedResult) {
-                if (!drawEvent?.resultLocked) {
-                    const lockedAt = new Date();
-                    await Lottery.updateOne(
-                        { address: lotteryAddress },
-                        {
-                            $set: {
-                                "drawEvent.resultLocked": true,
-                                "drawEvent.resultLockedAt": lockedAt,
-                            }
-                        }
-                    );
-
-                    drawEvent = {
-                        ...drawEvent,
-                        resultLocked: true,
-                        resultLockedAt: lockedAt,
-                    };
-                }
-
-                return res.status(200).json(
-                    buildRecordedLivePayload({
-                        drawEvent,
-                        scheduledAt: lotteryScheduledAtIso,
-                        checkedAt: response.checkedAt || checkedAtNow,
-                    })
-                );
-            }
-        }
 
         return res.status(200).json({
             ok: true,

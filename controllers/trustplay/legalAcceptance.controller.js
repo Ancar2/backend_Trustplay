@@ -1,4 +1,4 @@
-const LegalAcceptanceLog = require("../../models/trustplay/legalAcceptanceLog.model");
+const LegalAcceptance = require("../../models/legal/legalAcceptance.model");
 
 const toPositiveInt = (value, fallback) => {
     const parsed = Number(value);
@@ -14,23 +14,24 @@ exports.getAcceptanceAudit = async (req, res) => {
         const skip = (page - 1) * limit;
 
         const query = {};
-        const email = String(req.query?.email || "").trim().toLowerCase();
-        const legalVersion = String(req.query?.legalVersion || "").trim();
+        const documentKey = String(req.query?.documentKey || "").trim().toLowerCase();
+        const version = String(req.query?.version || "").trim();
         const source = String(req.query?.source || "").trim();
         const userId = String(req.query?.userId || "").trim();
 
-        if (email) query.email = email;
-        if (legalVersion) query.legalVersion = legalVersion;
+        if (documentKey) query.documentKey = documentKey;
+        if (version) query.version = version;
         if (source) query.source = source;
         if (userId) query.userId = userId;
 
         const [logs, total] = await Promise.all([
-            LegalAcceptanceLog.find(query)
+            LegalAcceptance.find(query)
+                .populate({ path: "userId", select: "username email wallets" })
                 .sort({ acceptedAt: -1, _id: -1 })
                 .skip(skip)
                 .limit(limit)
                 .lean(),
-            LegalAcceptanceLog.countDocuments(query)
+            LegalAcceptance.countDocuments(query)
         ]);
 
         return res.status(200).json({
@@ -43,7 +44,6 @@ exports.getAcceptanceAudit = async (req, res) => {
         });
     } catch (error) {
         console.error("Error getAcceptanceAudit:", error);
-        return res.status(500).json({ ok: false, msj: "Error interno consultando auditoría legal" });
+        return res.status(500).json({ ok: false, msj: "Error interno consultando auditoria legal" });
     }
 };
-

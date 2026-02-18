@@ -140,3 +140,25 @@ test("reconcile lotteries validator rejects year range invertido", () => {
     const errors = validators.reconcileLotteriesBody(req);
     assert.ok(errors.includes("yearStart no puede ser mayor que yearEnd."));
 });
+
+test("legal accept validator accepts valid payload", () => {
+    const req = {
+        body: {
+            documentKey: "terms",
+            versionId: "507f1f77bcf86cd799439011",
+            source: "legal_center"
+        }
+    };
+    const errors = validators.legalAcceptBody(req);
+    assert.equal(errors.length, 0);
+});
+
+test("legal create version validator requires content", () => {
+    const req = {
+        body: {
+            version: "1.2.0"
+        }
+    };
+    const errors = validators.legalCreateVersionBody(req);
+    assert.ok(errors.includes("Debes enviar contentUrl o contentHtml."));
+});

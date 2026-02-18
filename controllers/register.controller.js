@@ -3,16 +3,25 @@ const crypto = require("crypto");
 const sendEmail = require("../utils/sendEmail");
 const { buildVerificationEmail } = require("../utils/emailTemplates");
 const {
-  getCurrentLegalVersion,
-  validateLegalAcceptance,
-  buildLegalAcceptanceRecord,
-  registerLegalAcceptanceAudit
-} = require("../utils/legalAcceptance");
+  ensureNewUserLegalAcceptance,
+  registerCurrentLegalAcceptanceForNewUser
+} = require("../services/legal/legal.service");
 
 const EMAIL_VERIFY_TTL_MINUTES = Number(process.env.EMAIL_VERIFY_TTL_MINUTES || 60 * 24);
 
 const hashVerificationToken = (token) => (
   crypto.createHash("sha256").update(String(token)).digest("hex")
+);
+
+const PHONE_COUNTRY_CODE_REGEX = /^\+[1-9]\d{0,3}$/;
+const PHONE_NATIONAL_REGEX = /^\d{6,15}$/;
+
+const normalizePhoneCountryCode = (value) => (
+  typeof value === "string" ? value.trim() : ""
+);
+
+const normalizePhoneNationalNumber = (value) => (
+  typeof value === "string" ? value.replace(/\D+/g, "") : ""
 );
 
 const resolveVerificationTtlMinutes = () => (
@@ -55,6 +64,8 @@ exports.register = async (req, res) => {
       username,
       email,
       password,
+      phone,
+      marketingConsent,
       sponsor,
       photo,
       legalAcceptance
@@ -62,21 +73,39 @@ exports.register = async (req, res) => {
 
     const normalizedUsername = typeof username === "string" ? username.trim() : "";
     const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+    const normalizedPhoneCountryCode = normalizePhoneCountryCode(phone?.countryCode);
+    const normalizedPhoneNationalNumber = normalizePhoneNationalNumber(phone?.nationalNumber);
+    const normalizedPhoneE164 = `${normalizedPhoneCountryCode}${normalizedPhoneNationalNumber}`;
 
     // 1. Input Validation
-    if (!normalizedUsername || !normalizedEmail || !password) {
-      return res.status(400).json({ msj: "Faltan campos obligatorios (username, email, password)" });
+    if (!normalizedUsername || !normalizedEmail || !password || !normalizedPhoneCountryCode || !normalizedPhoneNationalNumber) {
+      return res.status(400).json({ msj: "Faltan campos obligatorios (username, email, celular, password)" });
     }
 
-    const currentLegalVersion = await getCurrentLegalVersion();
-    const legalValidation = validateLegalAcceptance(legalAcceptance, currentLegalVersion);
+    if (!PHONE_COUNTRY_CODE_REGEX.test(normalizedPhoneCountryCode)) {
+      return res.status(400).json({ msj: "El indicativo del celular no es válido." });
+    }
+
+    if (!PHONE_NATIONAL_REGEX.test(normalizedPhoneNationalNumber)) {
+      return res.status(400).json({ msj: "El número de celular no es válido." });
+    }
+
+    const legalValidation = await ensureNewUserLegalAcceptance({
+      legalAcceptancePayload: legalAcceptance
+    });
     if (!legalValidation.ok) {
+      const pendingDocuments = Array.isArray(legalValidation.pendingDocuments)
+        ? legalValidation.pendingDocuments
+        : [];
       return res.status(400).json({
         msj: legalValidation.msg,
         code: "LEGAL_ACCEPTANCE_REQUIRED",
-        legalVersion: currentLegalVersion
+        legalVersion: pendingDocuments[0]?.version || "",
+        pendingDocuments
       });
     }
+
+    const marketingAccepted = marketingConsent?.accepted === true || legalAcceptance?.accepted === true;
 
     // Validar robustez de la contraseña
     // Min 6 caracteres, 1 mayúscula, 1 minúscula, 1 especial o número
@@ -102,22 +131,28 @@ exports.register = async (req, res) => {
       email: normalizedEmail,
       password,
       role: "user",
+      phone: {
+        countryCode: normalizedPhoneCountryCode,
+        nationalNumber: normalizedPhoneNationalNumber,
+        e164: normalizedPhoneE164
+      },
       sponsor: typeof sponsor === "string" ? sponsor.toLowerCase() : null,
       photo,
       isVerified: false, // Default
       verificationTokenHash: verificationData.hash,
       verificationTokenExpire: verificationData.expireAt,
-      legalAcceptance: buildLegalAcceptanceRecord({
-        normalized: legalValidation.normalized,
-        source: "register_form",
-        req
-      })
+      marketingConsent: {
+        accepted: marketingAccepted,
+        acceptedAt: new Date(),
+        source: "register_form"
+      }
     });
 
     await user.save();
-    await registerLegalAcceptanceAudit({
-      user,
-      legalAcceptance: user.legalAcceptance
+    await registerCurrentLegalAcceptanceForNewUser({
+      userId: user._id,
+      req,
+      source: "register_form"
     });
 
     try {

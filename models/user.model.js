@@ -16,6 +16,23 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+    phone: {
+      countryCode: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+      nationalNumber: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+      e164: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+    },
     password: {
       type: String,
       // Password not required for social login users
@@ -78,21 +95,12 @@ const userSchema = new mongoose.Schema(
     },
     resetPasswordToken: String,
     resetPasswordExpire: Date,
-    legalAcceptance: {
+    marketingConsent: {
       accepted: { type: Boolean, default: false },
-      version: { type: String, default: "" },
-      acknowledgements: {
-        terms: { type: Boolean, default: false },
-        privacy: { type: Boolean, default: false },
-        cookies: { type: Boolean, default: false },
-        disclaimer: { type: Boolean, default: false }
-      },
       acceptedAt: { type: Date, default: null },
-      ipAddress: { type: String, default: "" },
-      userAgent: { type: String, default: "" },
       source: {
         type: String,
-        enum: ["register_form", "social_login", "login_form"],
+        enum: ["register_form", "support_update", "admin_update"],
         default: "register_form"
       }
     }
@@ -119,5 +127,6 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
 userSchema.index({ wallets: 1 });
 userSchema.index({ "sponsorships.wallet": 1 });
 userSchema.index({ verificationTokenHash: 1 }, { sparse: true });
+userSchema.index({ "phone.e164": 1 });
 
 module.exports = mongoose.model("User", userSchema);

@@ -14,6 +14,7 @@ router.put(
     validateRequest(validators.trustplayUpdateBody),
     trustplayInfoController.updateInfo
 );
+
 router.get(
     "/legal/acceptance-audit",
     authMiddleware.verifyToken,

@@ -32,13 +32,7 @@ router.put(
     validateRequest(validators.lotteryEventScheduleBody),
     lotteryController.announceLotteryEvent
 );
-router.put(
-    "/lotteries/:address/result-video",
-    authMiddleware.verifyToken,
-    authMiddleware.isAdmin,
-    validateRequest(validators.lotteryResultVideoBody),
-    lotteryController.setLotteryResultVideo
-);
+
 router.post(
     "/lotteries/:address/close",
     authMiddleware.verifyToken,
