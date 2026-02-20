@@ -139,7 +139,7 @@ exports.getMetadata = async (req, res) => {
     }
 
     try {
-        const nftContract = getExclusiveNftContract();
+        const nftContract = await getExclusiveNftContract();
         let tokenUri = "";
 
         try {
@@ -193,7 +193,7 @@ exports.getMetadata = async (req, res) => {
  */
 exports.getGlobalInfo = async (req, res) => {
     try {
-        const nftContract = getExclusiveNftContract();
+        const nftContract = await getExclusiveNftContract();
 
         // Llamadas paralelas para eficiencia
         const [activeSupply, maxSlots, price, threshold] = await Promise.all([
@@ -318,7 +318,7 @@ exports.recordClaim = async (req, res) => {
             return res.status(403).json({ success: false, message: "No puedes registrar claims para otra wallet" });
         }
 
-        const nftContract = getExclusiveNftContract();
+        const nftContract = await getExclusiveNftContract();
         let chainOwner;
         try {
             chainOwner = normalizeWallet(await nftContract.ownerOf(normalizedTokenId));

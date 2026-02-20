@@ -86,7 +86,7 @@ const roundTo18 = (value) => {
 };
 
 const syncExclusiveNftOwnersState = async () => {
-    const nftContract = getExclusiveNftContract();
+    const nftContract = await getExclusiveNftContract();
     const [totalSupplyRaw, maxSlotsRaw] = await Promise.all([
         nftContract.totalSupply(),
         nftContract.maxSlots().catch(() => 0n)

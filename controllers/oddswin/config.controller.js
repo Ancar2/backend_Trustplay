@@ -1,13 +1,16 @@
 const GlobalConfig = require('../../models/oddswin/globalConfig.model');
 
-// Predefined defaults (current values) to seed if empty
+const getEnvAddress = (key) => String(process.env[key] || "").trim();
+
+// Valores iniciales al crear GlobalConfig si no existe documento.
+// Se priorizan variables de entorno para evitar arrastrar direcciones antiguas hardcodeadas.
 const DEFAULTS = {
-    sponsors: '0xb7c637417455D64EC5eE24657E293BBfaAde1dA9',
-    middleware: '0xDeb0f7Bf3860411AC0F870566Bd32239F72F72Cc',
-    factory: '0xeC0c20136BfaB92f495Ae1A46f1094d90E2c4D62',
-    exclusiveNFT: '0xf9a6ACbC87667418085e4396E66F24D720B4cbc8',
-    usdt: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
-    owner: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266' // Placeholder (Hardhat Default) or actual Factory Owner
+    sponsors: getEnvAddress("DEFAULT_SPONSORS_ADDRESS"),
+    middleware: getEnvAddress("DEFAULT_MIDDLEWARE_ADDRESS"),
+    factory: getEnvAddress("DEFAULT_FACTORY_ADDRESS"),
+    exclusiveNFT: getEnvAddress("DEFAULT_EXCLUSIVE_NFT_ADDRESS"),
+    usdt: getEnvAddress("DEFAULT_USDT_ADDRESS"),
+    owner: getEnvAddress("DEFAULT_FACTORY_OWNER")
 };
 
 const configController = {

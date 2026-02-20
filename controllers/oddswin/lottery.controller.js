@@ -3,7 +3,7 @@ const Lottery = require("../../models/oddswin/lottery.model");
 const Box = require("../../models/oddswin/box.model");
 const User = require("../../models/user.model");
 const GlobalConfig = require("../../models/oddswin/globalConfig.model");
-const { getProvider, CONTRACTS } = require("../../services/blockchain.service");
+const { getProvider } = require("../../services/blockchain.service");
 const { syncExclusiveNftOwnersState } = require("../../services/oddswin/exclusiveNft.sync.service");
 const {
     getNextLiveWithCache,
@@ -164,11 +164,7 @@ const resolveFactoryAddress = async () => {
     const config = await GlobalConfig.findOne().select("factory").lean().catch(() => null);
     const fromConfig = normalizeAddress(config?.factory || "");
     if (fromConfig) return fromConfig;
-
-    const fromEnv = normalizeAddress(process.env.FACTORY_ADDRESS || "");
-    if (fromEnv) return fromEnv;
-
-    return normalizeAddress(CONTRACTS?.FACTORY || "");
+    return "";
 };
 
 const readTokenDecimals = async (provider, tokenAddress) => {

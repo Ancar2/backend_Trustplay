@@ -1,5 +1,5 @@
 const { ethers } = require("ethers");
-const { getProvider, CONTRACTS } = require("../blockchain.service");
+const { getProvider } = require("../blockchain.service");
 const Lottery = require("../../models/oddswin/lottery.model");
 const Box = require("../../models/oddswin/box.model");
 const ReconcileState = require("../../models/system/reconcileState.model");
@@ -238,22 +238,15 @@ const computeRange = async (provider, options = {}) => {
 };
 
 const getFactoryAddress = async () => {
-    const envFactory = normalizeAddress(process.env.RECONCILE_FACTORY_ADDRESS || "");
-    if (envFactory) return envFactory;
-
     try {
         const config = await GlobalConfig.findOne().select("factory").lean();
         const configFactory = normalizeAddress(config?.factory || "");
         if (configFactory) return configFactory;
     } catch (error) {
-        // Fallback directo al valor estático
+        // Continuar para arrojar un error de configuración explícito.
     }
 
-    const defaultFactory = normalizeAddress(CONTRACTS.FACTORY || "");
-    if (!defaultFactory) {
-        throw new Error("No se encontro direccion valida del contrato Factory");
-    }
-    return defaultFactory;
+    throw new Error("No se encontro direccion valida del contrato Factory en GlobalConfig");
 };
 
 const getYearRange = (options = {}) => {

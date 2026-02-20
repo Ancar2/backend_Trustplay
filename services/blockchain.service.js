@@ -1,17 +1,14 @@
 const { ethers } = require("ethers");
+const GlobalConfig = require("../models/oddswin/globalConfig.model");
 
-// Configuración de la Red (Amoy)
-// NOTA: Usamos un RPC público o el definido en .env
 const RPC_URL = process.env.RPC_URL_AMOY || "https://rpc-amoy.polygon.technology/";
 const provider = new ethers.JsonRpcProvider(RPC_URL);
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
-// Direcciones de Contratos (Amoy)
-// Provistas por el usuario
-const CONTRACTS = {
-    FACTORY: "0xeC0c20136BfaB92f495Ae1A46f1094d90E2c4D62",
-    EXCLUSIVE_NFT: "0xf9a6ACbC87667418085e4396E66F24D720B4cbc8", // Proxy
-    LOTTERY_V2: "0x18f769D99e0ecd13fAd92E027035A5fa30c5C9B0" // TODO: Verificar si esta también cambia
-};
+const CONFIG_CACHE_TTL_MS = Number(process.env.CONTRACT_CONFIG_CACHE_MS || 10_000);
+
+let contractsCache = null;
+let contractsCacheExpiresAt = 0;
 
 // ABIs Mínimos (Solo lectura para funciones públicas)
 const ABI_EXCLUSIVE_NFT = [
@@ -34,20 +31,66 @@ const ABI_FACTORY = [
     "function getAllLotteries(uint256 year) view returns (address[])"
 ];
 
-// Instancias de Contratos
-const getExclusiveNftContract = () => {
-    return new ethers.Contract(CONTRACTS.EXCLUSIVE_NFT, ABI_EXCLUSIVE_NFT, provider);
+const normalizeAddress = (value) => {
+    if (typeof value !== "string") return "";
+    const trimmed = value.trim();
+    if (!ethers.isAddress(trimmed)) return "";
+    const normalized = ethers.getAddress(trimmed);
+    return normalized === ZERO_ADDRESS ? "" : normalized;
 };
 
-const getFactoryContract = () => {
-    return new ethers.Contract(CONTRACTS.FACTORY, ABI_FACTORY, provider);
+const readContractsFromDb = async () => {
+    const config = await GlobalConfig.findOne()
+        .select("factory exclusiveNFT sponsors middleware usdt owner")
+        .lean();
+
+    return {
+        FACTORY: normalizeAddress(config?.factory || ""),
+        EXCLUSIVE_NFT: normalizeAddress(config?.exclusiveNFT || ""),
+        SPONSORS: normalizeAddress(config?.sponsors || ""),
+        MIDDLEWARE: normalizeAddress(config?.middleware || ""),
+        USDT: normalizeAddress(config?.usdt || ""),
+        OWNER: normalizeAddress(config?.owner || "")
+    };
+};
+
+const getContractsConfig = async ({ force = false } = {}) => {
+    const now = Date.now();
+    if (!force && contractsCache && now < contractsCacheExpiresAt) {
+        return contractsCache;
+    }
+
+    const contracts = await readContractsFromDb();
+    contractsCache = contracts;
+    contractsCacheExpiresAt = now + Math.max(1_000, CONFIG_CACHE_TTL_MS);
+    return contracts;
+};
+
+const getRequiredAddress = (contracts, key) => {
+    const value = contracts?.[key];
+    if (!value) {
+        throw new Error(`No hay direccion configurada para ${key} en GlobalConfig`);
+    }
+    return value;
+};
+
+const getExclusiveNftContract = async () => {
+    const contracts = await getContractsConfig();
+    const address = getRequiredAddress(contracts, "EXCLUSIVE_NFT");
+    return new ethers.Contract(address, ABI_EXCLUSIVE_NFT, provider);
+};
+
+const getFactoryContract = async () => {
+    const contracts = await getContractsConfig();
+    const address = getRequiredAddress(contracts, "FACTORY");
+    return new ethers.Contract(address, ABI_FACTORY, provider);
 };
 
 const getProvider = () => provider;
 
 module.exports = {
     getProvider,
+    getContractsConfig,
     getExclusiveNftContract,
-    getFactoryContract,
-    CONTRACTS
+    getFactoryContract
 };
