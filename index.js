@@ -19,6 +19,43 @@ const app = express();
 // Evita exponer tecnologia del servidor en headers HTTP.
 app.disable("x-powered-by");
 
+const normalizeOrigin = (value) => {
+    if (!value) return "";
+    try {
+        return new URL(String(value).trim()).origin;
+    } catch {
+        return "";
+    }
+};
+
+const asBoolean = (value, fallback = null) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (normalized === "true" || normalized === "1") return true;
+    if (normalized === "false" || normalized === "0") return false;
+    return fallback;
+};
+
+const parseAllowedOrigins = () => {
+    const configured = [
+        process.env.FRONTEND_URL,
+        ...String(process.env.FRONTEND_URLS || "")
+            .split(",")
+            .map((origin) => origin.trim())
+            .filter(Boolean)
+    ]
+        .map(normalizeOrigin)
+        .filter(Boolean);
+
+    if (String(process.env.NODE_ENV || "").toLowerCase() !== "production") {
+        configured.push("http://localhost:4200");
+    }
+
+    return [...new Set(configured)];
+};
+
+const allowedOrigins = parseAllowedOrigins();
+const sameDomainDeployment = asBoolean(process.env.AUTH_SAME_DOMAIN, true);
+
 // Agrega headers de seguridad comunes y soporte de cookies.
 app.use(helmet());
 app.use(cookieParser());
@@ -34,29 +71,38 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // CORS controla que dominios del navegador pueden consumir la API.
-const corsOptions = {
-    origin: (origin, callback) => {
-        // Dominios permitidos
-        const allowed = [
-            "http://localhost:4200",
-            process.env.FRONTEND_URL
-        ].filter(Boolean);
+const corsOptionsDelegate = (req, callback) => {
+    const origin = req.header("origin");
 
-        // Si no hay origin (curl/postman) o el dominio esta en allowlist, se permite.
-        if (!origin || allowed.includes(origin)) {
-            callback(null, true);
+    // Si no hay origin (curl/postman) se permite.
+    if (!origin) {
+        callback(null, { origin: true, credentials: true, optionsSuccessStatus: 200 });
+        return;
+    }
+
+    const normalizedOrigin = normalizeOrigin(origin);
+    if (normalizedOrigin && allowedOrigins.includes(normalizedOrigin)) {
+        callback(null, { origin: true, credentials: true, optionsSuccessStatus: 200 });
+        return;
+    }
+
+    if (sameDomainDeployment) {
+        const forwardedHost = String(req.header("x-forwarded-host") || "").split(",")[0].trim();
+        const host = forwardedHost || String(req.header("host") || "").trim();
+        const forwardedProto = String(req.header("x-forwarded-proto") || "").split(",")[0].trim();
+        const protocol = forwardedProto || req.protocol || "http";
+        const requestHostOrigin = normalizeOrigin(`${protocol}://${host}`);
+
+        if (requestHostOrigin && requestHostOrigin === normalizedOrigin) {
+            callback(null, { origin: true, credentials: true, optionsSuccessStatus: 200 });
             return;
         }
+    }
 
-        // Si el origen no esta permitido, se bloquea.
-        console.log("CORS Blocked Origin:", origin);
-        callback(new Error("Not allowed by CORS"));
-    },
-    // Necesario para enviar/recibir cookies de sesion entre frontend y API.
-    credentials: true,
-    optionsSuccessStatus: 200
+    console.log("CORS Blocked Origin:", origin, "Allowed:", allowedOrigins, "SameDomain:", sameDomainDeployment);
+    callback(new Error("Not allowed by CORS"));
 };
-app.use(cors(corsOptions));
+app.use(cors(corsOptionsDelegate));
 
 // Parsea JSON del body y limita tamano para evitar cargas excesivas.
 app.use(express.json({ limit: "1mb" }));

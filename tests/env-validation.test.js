@@ -51,6 +51,7 @@ test("validateEnv requires frontend origin in production", () => {
     withEnv(
         {
             NODE_ENV: "production",
+            AUTH_SAME_DOMAIN: "false",
             FRONTEND_URL: "",
             FRONTEND_URLS: "",
         },
@@ -63,18 +64,15 @@ test("validateEnv requires frontend origin in production", () => {
     );
 });
 
-test("validateEnv enforces secure cookie policy in production", () => {
+test("validateEnv rejects invalid AUTH_SAME_DOMAIN value", () => {
     withEnv(
         {
-            NODE_ENV: "production",
-            FRONTEND_URL: "https://app.trustplay.com",
-            AUTH_COOKIE_SAMESITE: "none",
-            AUTH_COOKIE_SECURE: "false",
+            AUTH_SAME_DOMAIN: "maybe",
         },
         () => {
             assert.throws(
                 () => validateEnv(),
-                /AUTH_COOKIE_SAMESITE=none requiere AUTH_COOKIE_SECURE=true/
+                /AUTH_SAME_DOMAIN debe ser true o false/
             );
         }
     );
@@ -85,8 +83,7 @@ test("validateEnv passes with a valid production configuration", () => {
         {
             NODE_ENV: "production",
             FRONTEND_URL: "https://app.trustplay.com",
-            AUTH_COOKIE_SAMESITE: "none",
-            AUTH_COOKIE_SECURE: "true",
+            AUTH_SAME_DOMAIN: "false",
             RATE_LIMIT_MAX: "2000",
         },
         () => {

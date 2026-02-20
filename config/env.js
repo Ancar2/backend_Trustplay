@@ -1,5 +1,4 @@
 const REQUIRED_ENV_VARS = ["PORT", "DB_URL", "SECRET_JWT_KEY"];
-const COOKIE_SAME_SITE_VALUES = new Set(["strict", "lax", "none"]);
 
 const asTrimmed = (value) => (value === undefined || value === null ? "" : String(value).trim());
 
@@ -32,33 +31,24 @@ const validateJwtSecret = (isProduction) => {
     }
 };
 
-const validateCookieConfig = (isProduction) => {
-    const sameSite = asTrimmed(process.env.AUTH_COOKIE_SAMESITE).toLowerCase();
-    if (sameSite && !COOKIE_SAME_SITE_VALUES.has(sameSite)) {
-        throw new Error("AUTH_COOKIE_SAMESITE solo acepta: strict, lax o none.");
-    }
+const validateSameDomainFlag = () => {
+    const sameDomain = asTrimmed(process.env.AUTH_SAME_DOMAIN);
+    if (!sameDomain) return;
 
-    const cookieSecure = asBoolean(process.env.AUTH_COOKIE_SECURE, null);
-    if (isProduction && sameSite === "none" && cookieSecure !== true) {
-        throw new Error("En produccion, AUTH_COOKIE_SAMESITE=none requiere AUTH_COOKIE_SECURE=true.");
-    }
-
-    const cookieMaxAge = asTrimmed(process.env.AUTH_COOKIE_MAX_AGE_MS);
-    if (cookieMaxAge) {
-        const parsed = Number(cookieMaxAge);
-        if (!Number.isFinite(parsed) || parsed <= 0) {
-            throw new Error("AUTH_COOKIE_MAX_AGE_MS debe ser un numero positivo en milisegundos.");
-        }
+    const parsed = asBoolean(sameDomain, null);
+    if (parsed === null) {
+        throw new Error("AUTH_SAME_DOMAIN debe ser true o false.");
     }
 };
 
 const validateCorsConfig = (isProduction) => {
     if (!isProduction) return;
 
+    const sameDomain = asBoolean(process.env.AUTH_SAME_DOMAIN, true);
     const frontendUrl = asTrimmed(process.env.FRONTEND_URL);
     const frontendUrls = asTrimmed(process.env.FRONTEND_URLS);
-    if (!frontendUrl && !frontendUrls) {
-        throw new Error("En produccion debes definir FRONTEND_URL o FRONTEND_URLS para CORS.");
+    if (sameDomain === false && !frontendUrl && !frontendUrls) {
+        throw new Error("En produccion con AUTH_SAME_DOMAIN=false debes definir FRONTEND_URL o FRONTEND_URLS para CORS.");
     }
 };
 
@@ -80,7 +70,7 @@ const validateEnv = () => {
     validateJwtSecret(isProduction);
     validateRateLimitConfig();
     validateCorsConfig(isProduction);
-    validateCookieConfig(isProduction);
+    validateSameDomainFlag();
 };
 
 module.exports = {

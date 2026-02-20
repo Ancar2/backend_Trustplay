@@ -51,19 +51,19 @@ if (isProduction && exposeTokenInBody !== "false") {
 }
 
 const origins = parseOrigins();
+const sameDomain = asBoolean(process.env.AUTH_SAME_DOMAIN, true);
 if (isProduction) {
-    if (origins.length === 0) {
-        failures.push("No hay origenes frontend configurados (FRONTEND_URL/FRONTEND_URLS).");
-    }
     const nonHttpsOrigins = origins.filter((origin) => !isHttpsUrl(origin));
     if (nonHttpsOrigins.length > 0) {
         failures.push(`En produccion todos los origenes frontend deben ser HTTPS. Invalidos: ${nonHttpsOrigins.join(", ")}`);
     }
 }
 
-const cookieSecure = asBoolean(process.env.AUTH_COOKIE_SECURE, null);
-if (isProduction && cookieSecure !== true) {
-    failures.push("AUTH_COOKIE_SECURE debe ser true en produccion.");
+if (sameDomain === null) {
+    failures.push("AUTH_SAME_DOMAIN debe ser true o false.");
+}
+if (isProduction && sameDomain === false && origins.length === 0) {
+    failures.push("Si AUTH_SAME_DOMAIN=false en produccion, debes configurar FRONTEND_URL o FRONTEND_URLS.");
 }
 
 const authRateLimit = Number(asTrimmed(process.env.AUTH_RATE_LIMIT_MAX) || "0");

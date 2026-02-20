@@ -60,7 +60,7 @@ Documento detallado: `api_Trustplay/ARCHITECTURE.md`.
 ## Seguridad y configuracion
 
 - CORS por allowlist (`FRONTEND_URL`, `FRONTEND_URLS`).
-- Cookies de auth con politica configurable (`AUTH_COOKIE_*`).
+- Cookies de auth segun `NODE_ENV` + `AUTH_SAME_DOMAIN`.
 - Rate limiting global y de autenticacion.
 - Validacion de entorno en arranque (`config/env.js`).
 

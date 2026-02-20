@@ -54,6 +54,31 @@ const toSafeUserPayload = (user) => ({
     updatedAt: user.updatedAt
 });
 
+const parseBooleanEnv = (value, fallback) => {
+    if (value === undefined || value === null) return fallback;
+    const normalized = String(value).trim().toLowerCase();
+    if (normalized === "true" || normalized === "1") return true;
+    if (normalized === "false" || normalized === "0") return false;
+    return fallback;
+};
+
+const isProductionEnv = () => String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
+
+const isSameDomainDeployment = () => parseBooleanEnv(process.env.AUTH_SAME_DOMAIN, true);
+
+const buildAuthCookieOptions = () => {
+    const isProduction = isProductionEnv();
+    const sameDomain = isSameDomainDeployment();
+    const sameSite = isProduction && !sameDomain ? "none" : "lax";
+
+    return {
+        expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        httpOnly: true,
+        secure: isProduction,
+        sameSite
+    };
+};
+
 exports.login = async (req, res) => {
     try {
         const { email, password, legalAcceptance } = req.body;
@@ -111,15 +136,7 @@ exports.login = async (req, res) => {
                 }
             );
 
-            // Set cookie
-            // Set cookie
-            const isProduction = process.env.NODE_ENV === 'production';
-            const options = {
-                expires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
-                httpOnly: true,
-                secure: isProduction, // true in production, false in dev
-                sameSite: isProduction ? 'none' : 'lax' // 'none' requires secure=true. 'lax' works for localhost dev.
-            };
+            const options = buildAuthCookieOptions();
 
             const exposeTokenInBody = process.env.EXPOSE_TOKEN_IN_BODY !== "false";
             const responsePayload = {
@@ -170,16 +187,7 @@ const generateToken = (user) => {
 const sendTokenResponse = (user, statusCode, res) => {
     const token = generateToken(user);
     const exposeTokenInBody = process.env.EXPOSE_TOKEN_IN_BODY !== "false";
-    const options = {
-        expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        // IMPORTANTE (dominios distintos):
-        // - 'strict' funciona bien cuando front y API comparten mismo dominio.
-        // - Si front y API quedan en dominios distintos, este valor debe cambiarse
-        //   temporalmente a 'none' (y secure debe permanecer true).
-        sameSite: 'strict'
-    };
+    const options = buildAuthCookieOptions();
     const responsePayload = {
         Welcome: `Bienvenido a ODDSWIN ${user.username}`,
         user: toSafeUserPayload(user)
