@@ -19,6 +19,20 @@ const app = express();
 // Evita exponer tecnologia del servidor en headers HTTP.
 app.disable("x-powered-by");
 
+const resolveClientIp = (req) => {
+    const cloudflareIp = String(req.header("cf-connecting-ip") || "").trim();
+    if (cloudflareIp) return cloudflareIp;
+
+    const forwardedFor = String(req.header("x-forwarded-for") || "");
+    const firstForwardedIp = forwardedFor
+        .split(",")
+        .map((item) => item.trim())
+        .find(Boolean);
+    if (firstForwardedIp) return firstForwardedIp;
+
+    return String(req.ip || req.socket?.remoteAddress || "unknown");
+};
+
 const normalizeOrigin = (value) => {
     if (!value) return "";
     try {
@@ -55,6 +69,10 @@ const parseAllowedOrigins = () => {
 
 const allowedOrigins = parseAllowedOrigins();
 const sameDomainDeployment = asBoolean(process.env.AUTH_SAME_DOMAIN, true);
+const isProductionEnv = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
+
+// En produccion detras de Nginx/CloudFront, Express debe confiar en proxy para resolver IP real.
+app.set("trust proxy", isProductionEnv ? true : false);
 
 // Agrega headers de seguridad comunes y soporte de cookies.
 app.use(helmet());
@@ -66,6 +84,8 @@ const limiter = rateLimit({
     max: Number(process.env.RATE_LIMIT_MAX || 2000),
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: (req) => resolveClientIp(req),
+    skip: (req) => req.method === "OPTIONS" || req.path === "/api/health",
     message: { msj: "Demasiadas peticiones desde esta IP, por favor intenta nuevamente en 15 minutos." }
 });
 app.use(limiter);

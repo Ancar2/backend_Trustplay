@@ -6,11 +6,27 @@ const userController = require("../../controllers/user.controller");
 const { validateRequest, validators } = require("../../middleware/requestValidation");
 
 const router = express.Router();
+
+const resolveClientIp = (req) => {
+    const cloudflareIp = String(req.header("cf-connecting-ip") || "").trim();
+    if (cloudflareIp) return cloudflareIp;
+
+    const forwardedFor = String(req.header("x-forwarded-for") || "");
+    const firstForwardedIp = forwardedFor
+        .split(",")
+        .map((item) => item.trim())
+        .find(Boolean);
+    if (firstForwardedIp) return firstForwardedIp;
+
+    return String(req.ip || req.socket?.remoteAddress || "unknown");
+};
+
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: Number(process.env.AUTH_RATE_LIMIT_MAX || 50),
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: (req) => resolveClientIp(req),
     skipSuccessfulRequests: true,
     message: { msj: "Demasiados intentos de autenticacion. Intenta nuevamente en unos minutos." }
 });

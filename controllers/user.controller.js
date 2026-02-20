@@ -1,12 +1,20 @@
 const User = require("../models/user.model");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
+const { ethers } = require("ethers");
 const Box = require("../models/oddswin/box.model");
 const Lottery = require("../models/oddswin/lottery.model");
 const ExclusiveNFT = require("../models/oddswin/exclusiveNFT.model");
 const LegalAcceptance = require("../models/legal/legalAcceptance.model");
 const sendEmail = require("../utils/sendEmail");
 const { buildPasswordResetEmail } = require("../utils/emailTemplates");
+const { getProvider } = require("../services/blockchain.service");
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const LOTTERY_INFO_ABI = [
+    "function infoLottery() view returns (tuple(address stableCoin, uint128 boxPrice, uint128 boxesSold, uint128 totalBoxes, uint128 winningNumber))"
+];
+const ERC20_DECIMALS_ABI = ["function decimals() view returns (uint8)"];
 
 const canMutateUser = (req, targetUserId) => (
     req.user
@@ -49,6 +57,63 @@ const getWalletsSponsoredBy = (user, sponsorWallet) => {
 const uniqueWallets = (wallets) => (
     [...new Set((wallets || []).map((wallet) => toWallet(wallet)).filter(Boolean))]
 );
+
+const readTokenDecimalsSafe = async (provider, tokenAddress) => {
+    const normalizedToken = toWallet(tokenAddress);
+    if (!normalizedToken || normalizedToken === ZERO_ADDRESS) return 18;
+
+    try {
+        const tokenContract = new ethers.Contract(normalizedToken, ERC20_DECIMALS_ABI, provider);
+        const decimalsRaw = await tokenContract.decimals();
+        const parsed = Number(decimalsRaw);
+        return Number.isInteger(parsed) && parsed >= 0 ? parsed : 18;
+    } catch {
+        return 18;
+    }
+};
+
+const readOnChainLotteryBoxPrice = async (lotteryAddress) => {
+    const normalizedLottery = toWallet(lotteryAddress);
+    if (!normalizedLottery) return { boxPrice: 0, stableCoin: "" };
+
+    try {
+        const provider = getProvider();
+        const lotteryContract = new ethers.Contract(normalizedLottery, LOTTERY_INFO_ABI, provider);
+        const infoRaw = await lotteryContract.infoLottery();
+
+        const stableCoin = toWallet(infoRaw?.stableCoin || "");
+        const boxPriceRaw = infoRaw?.boxPrice ?? 0n;
+        const decimals = await readTokenDecimalsSafe(provider, stableCoin);
+        const boxPrice = Number(ethers.formatUnits(boxPriceRaw, decimals));
+
+        if (!Number.isFinite(boxPrice) || boxPrice <= 0) {
+            return { boxPrice: 0, stableCoin };
+        }
+
+        return { boxPrice, stableCoin };
+    } catch {
+        return { boxPrice: 0, stableCoin: "" };
+    }
+};
+
+const resolveLotteryBoxPrice = async (lotteryAddress, cachedPrice = 0) => {
+    const normalizedLottery = toWallet(lotteryAddress);
+    const numericCached = Number(cachedPrice || 0);
+    if (!normalizedLottery) return 0;
+    if (numericCached > 0) return numericCached;
+
+    const onChainSnapshot = await readOnChainLotteryBoxPrice(normalizedLottery);
+    const onChainBoxPrice = Number(onChainSnapshot.boxPrice || 0);
+    if (onChainBoxPrice <= 0) return 0;
+
+    const update = { boxPrice: onChainBoxPrice };
+    if (onChainSnapshot.stableCoin) {
+        update.stableCoin = onChainSnapshot.stableCoin;
+    }
+
+    Lottery.updateOne({ address: normalizedLottery }, { $set: update }).catch(() => null);
+    return onChainBoxPrice;
+};
 
 const resolveReferralEntriesForSponsor = async (sponsorWallet) => {
     const normalizedSponsor = toWallet(sponsorWallet);
@@ -163,10 +228,12 @@ const calculateLifetimeTeamCommissionForWallet = async (sponsorWallet) => {
     let earnedCommission = 0;
     let lostCommission = 0;
 
-    referralBoxes.forEach((box) => {
+    for (const box of referralBoxes) {
         const lotteryAddress = toWallet(box.direccionLoteria);
-        const boxPrice = boxPriceMap.get(lotteryAddress) || 0;
-        if (boxPrice <= 0) return;
+        const cachedPrice = boxPriceMap.get(lotteryAddress) || 0;
+        const boxPrice = await resolveLotteryBoxPrice(lotteryAddress, cachedPrice);
+        boxPriceMap.set(lotteryAddress, boxPrice);
+        if (boxPrice <= 0) continue;
 
         const commissionPerBox = boxPrice / 4;
         const activationDate = activationMap.get(lotteryAddress);
@@ -177,7 +244,7 @@ const calculateLifetimeTeamCommissionForWallet = async (sponsorWallet) => {
         } else {
             lostCommission += commissionPerBox;
         }
-    });
+    }
 
     return {
         earnedCommission,
@@ -205,7 +272,8 @@ const calculateLostCommissionsForLottery = async (sponsorWallet, lotteryAddress)
 
     const activationDate = sponsorFirstBox?.fechaDeCompra ? new Date(sponsorFirstBox.fechaDeCompra) : null;
     const isActive = !!activationDate;
-    const commissionPerBox = Number(lottery.boxPrice || 0) / 4;
+    const resolvedBoxPrice = await resolveLotteryBoxPrice(normalizedLottery, Number(lottery.boxPrice || 0));
+    const commissionPerBox = resolvedBoxPrice / 4;
 
     const referralEntries = await resolveReferralEntriesForSponsor(normalizedSponsor);
     const referralWallets = uniqueWallets(referralEntries.map((entry) => entry.wallet));
@@ -1403,18 +1471,23 @@ exports.getEarningsBreakdownByLottery = async (req, res) => {
             ? await Lottery.find({ address: { $in: teamLotteryAddresses } }).select("address name symbol year index boxPrice")
             : [];
         const teamLotteryMap = new Map(teamLotteries.map((lottery) => [toWallet(lottery.address), lottery]));
+        const teamBoxPriceMap = new Map(
+            teamLotteries.map((lottery) => [toWallet(lottery.address), Number(lottery.boxPrice || 0)])
+        );
 
-        referralBoxes.forEach((box) => {
+        for (const box of referralBoxes) {
             const lotteryAddress = toWallet(box.direccionLoteria);
             const ownerWallet = toWallet(box.owner);
-            if (!lotteryAddress || !ownerWallet) return;
+            if (!lotteryAddress || !ownerWallet) continue;
 
             const lotteryInfo = teamLotteryMap.get(lotteryAddress);
-            const boxPrice = Number(lotteryInfo?.boxPrice || 0);
-            if (boxPrice <= 0) return;
+            const cachedBoxPrice = teamBoxPriceMap.get(lotteryAddress) || 0;
+            const boxPrice = await resolveLotteryBoxPrice(lotteryAddress, cachedBoxPrice);
+            teamBoxPriceMap.set(lotteryAddress, boxPrice);
+            if (boxPrice <= 0) continue;
 
             const row = ensureRow(lotteryAddress, lotteryInfo || {});
-            if (!row) return;
+            if (!row) continue;
 
             const commission = boxPrice / 4;
             const relation = referralByWallet.get(ownerWallet);
@@ -1433,7 +1506,7 @@ exports.getEarningsBreakdownByLottery = async (req, res) => {
                 if (purchaseDate && (!row.lastLostAt || purchaseDate.getTime() > row.lastLostAt.getTime())) {
                     row.lastLostAt = purchaseDate;
                 }
-                return;
+                continue;
             }
 
             if (level === "indirecto") {
@@ -1441,7 +1514,7 @@ exports.getEarningsBreakdownByLottery = async (req, res) => {
             } else {
                 row.directTeamGain += commission;
             }
-        });
+        }
 
         // ---------------------------------------------------------------------
         // 2) Ganancia por premios en cada loteria (rol)
