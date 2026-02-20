@@ -88,10 +88,10 @@ router.get(
     "/users/legal-stats/:id",
     authMiddleware.verifyToken,
     authMiddleware.isAdmin,
-    // Assuming isAdmin middleware exists here or we use requireSelfOrAdmin if user wants to see their own.
-    // Req says "admin users section", so isAdmin is appropriate.
-    // If not available in this file, we might need to import it or rely on logic.
-    // authMiddleware usually has isAdmin.
+    // Asumiendo que el middleware isAdmin existe aquÃ­ o usamos requireSelfOrAdmin si el usuario quiere ver sus propios datos.
+    // El requerimiento dice "seccion de usuarios administradores", asi que isAdmin es apropiado.
+    // Si no esta disponible en este archivo, podriamos necesitar importarlo o depender de la logica.
+    // authMiddleware usualmente tiene isAdmin.
     userController.getUserLegalStats
 );
 

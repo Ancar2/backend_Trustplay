@@ -18,8 +18,13 @@ Estas variables son obligatorias para que la API arranque:
 |---|---|---|---|
 | `NODE_ENV` | Define entorno (`development` o `production`). Afecta banderas de seguridad de cookies. | `development` | `controllers/login.controller.js` |
 | `FRONTEND_URL` | Dominio permitido del frontend para CORS y enlaces de correo. | `http://localhost:4200` | `index.js`, `controllers/register.controller.js`, `controllers/user.controller.js` |
+| `FRONTEND_URLS` | Lista adicional de orígenes CORS permitidos (separados por coma). Útil para múltiples dominios frontend. | `https://app.trustplay.com,https://d209vl0llfmx1m.cloudfront.net` | `index.js` |
 | `TOKEN_EXPIRE` | Tiempo de expiracion del JWT. | `24h` | `controllers/login.controller.js`, `controllers/user.controller.js` |
 | `EXPOSE_TOKEN_IN_BODY` | Si vale `false`, evita enviar el token en el body de respuesta del login social. | `false` | `controllers/login.controller.js` |
+| `AUTH_COOKIE_SAMESITE` | Política `SameSite` de cookie de autenticación (`strict`, `lax`, `none`). Si no se define, usa `none` en producción y `lax` en desarrollo. | `none` | `controllers/login.controller.js` |
+| `AUTH_COOKIE_SECURE` | Fuerza flag `Secure` de la cookie (`true`/`false`). Si no se define, sigue `NODE_ENV`. | `true` | `controllers/login.controller.js` |
+| `AUTH_COOKIE_DOMAIN` | Dominio explícito para cookie de autenticación (opcional). | `.trustplay.com` | `controllers/login.controller.js` |
+| `AUTH_COOKIE_MAX_AGE_MS` | Duración de cookie de autenticación en milisegundos. | `86400000` | `controllers/login.controller.js` |
 
 ## Variables de seguridad y limites
 
@@ -83,6 +88,8 @@ Estas variables son obligatorias para que la API arranque:
 | Variable | Para que sirve | Ejemplo | Donde se usa |
 |---|---|---|---|
 | `CI` | Indica ejecucion en pipeline. Ajusta comportamiento del script de auditoria de dependencias. | `true` | `scripts/dependency-audit.js` |
+| `AUDIT_FAIL_ON_CRITICAL` | Define si `npm run audit:deps` debe fallar cuando detecta vulnerabilidades `critical` (`true/false`). | `true` | `scripts/dependency-audit.js` |
+| `AUDIT_FAIL_ON_HIGH` | Define si `npm run audit:deps` debe fallar cuando detecta vulnerabilidades `high` (`true/false`). | `false` | `scripts/dependency-audit.js` |
 
 ## Ejemplo de `.env`
 
@@ -93,8 +100,12 @@ SECRET_JWT_KEY=cambia_esta_clave_por_una_segura
 
 NODE_ENV=development
 FRONTEND_URL=http://localhost:4200
+FRONTEND_URLS=https://app.trustplay.com,https://d209vl0llfmx1m.cloudfront.net
 TOKEN_EXPIRE=24h
 EXPOSE_TOKEN_IN_BODY=false
+AUTH_COOKIE_SAMESITE=lax
+AUTH_COOKIE_SECURE=false
+AUTH_COOKIE_MAX_AGE_MS=86400000
 
 RATE_LIMIT_MAX=2000
 AUTH_RATE_LIMIT_MAX=50
@@ -133,3 +144,9 @@ RECONCILE_CREATION_SCAN_START_BLOCK=0
 - Nunca subir `.env` al repositorio.
 - Usar valores diferentes por entorno (`development`, `staging`, `production`).
 - Rotar `SECRET_JWT_KEY`, credenciales SMTP y secretos OAuth de forma periodica.
+- En produccion usar `SECRET_JWT_KEY` de al menos 32 caracteres.
+- En produccion definir origenes CORS validos (`FRONTEND_URL` o `FRONTEND_URLS`) y forzar `AUTH_COOKIE_SECURE=true`.
+- Antes de despliegue ejecutar:
+  - `npm run verify:ci`
+  - `npm run security:baseline`
+  - `npm run audit:deps`

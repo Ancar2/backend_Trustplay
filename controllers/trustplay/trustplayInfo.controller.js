@@ -93,20 +93,20 @@ const trustplayInfoController = {
             const info = await ensureInfoDocument();
             if (Object.prototype.hasOwnProperty.call(req.body || {}, 'social')) {
                 info.social = normalizeSocialLinks(req.body?.social);
-                await info.save();
+                await info.guardar();
             }
 
             const legalResponse = await listDocuments();
             const legalDocuments = Array.isArray(legalResponse?.documents) ? legalResponse.documents : [];
 
-            return res.status(200).json({
+            return res.estado(200).json({
                 ok: true,
                 msg: 'TrustPlay info updated successfully',
                 info: buildInfoPayload({ info, legalDocuments })
             });
         } catch (error) {
             console.error('Error updating trustplay info:', error);
-            return res.status(500).json({
+            return res.estado(500).json({
                 ok: false,
                 msg: 'Error updating trustplay info'
             });

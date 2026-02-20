@@ -1,47 +1,49 @@
 # Arquitectura de `api_Trustplay`
 
-Este documento define que debe ir en cada carpeta, como escalar a nuevos juegos y que no mezclar.
+Este documento define la arquitectura tecnica del backend, que debe ir en cada carpeta y como escalar a nuevos juegos sin romper la plataforma.
 
-## Objetivo
+## 1) Principios de arquitectura
 
-Separar claramente:
+- Separacion por capas: `routes -> middleware -> controllers -> services/models`.
+- Fuente de verdad: MongoDB para estado de negocio, blockchain para verificacion on-chain.
+- Seguridad por defecto: validacion de request, JWT, RBAC, CORS, rate limit y cookies seguras.
+- Escalabilidad por dominio: lo global va fuera de juegos; cada juego vive en su propio modulo.
 
-- Logica compartida de plataforma (usuarios, auth, legal, seguridad).
-- Logica por juego (hoy: Oddswin).
-
-Con esta estructura se puede agregar otro juego sin romper lo existente.
-
-## Arbol del proyecto (resumen)
+## 2) Arbol de carpetas (resumen real)
 
 ```text
 api_Trustplay/
 ├─ index.js
 ├─ package.json
-├─ package-lock.json
-├─ .env
-├─ .gitignore
 ├─ README.md
 ├─ ARCHITECTURE.md
-├─ AUDIT_READINESS.md
 ├─ config/
-│  ├─ env.js
-│  └─ db.js
+│  ├─ db.js
+│  └─ env.js
 ├─ routes/
 │  ├─ api.router.js
 │  └─ modules/
 │     ├─ auth.routes.js
 │     ├─ users.routes.js
 │     ├─ trustplay.routes.js
+│     ├─ legal.routes.js
 │     └─ oddswin/
 │        ├─ oddswin.routes.js
 │        ├─ admin.routes.js
 │        └─ config.routes.js
+├─ middleware/
+│  ├─ jwt.js
+│  ├─ authorize.js
+│  └─ requestValidation.js
 ├─ controllers/
-│  ├─ login.controller.js
 │  ├─ register.controller.js
+│  ├─ login.controller.js
 │  ├─ user.controller.js
 │  ├─ trustplay/
-│  │  └─ trustplayInfo.controller.js
+│  │  ├─ trustplayInfo.controller.js
+│  │  └─ legalAcceptance.controller.js
+│  ├─ legal/
+│  │  └─ legal.controller.js
 │  └─ oddswin/
 │     ├─ admin.controller.js
 │     ├─ box.controller.js
@@ -49,171 +51,168 @@ api_Trustplay/
 │     ├─ exclusiveNft.controller.js
 │     ├─ lottery.controller.js
 │     ├─ player.controller.js
-│     ├─ reconcile.controller.js
-│     └─ sponsor.controller.js
+│     ├─ sponsor.controller.js
+│     └─ reconcile.controller.js
+├─ services/
+│  ├─ blockchain.service.js
+│  ├─ legal/
+│  │  └─ legal.service.js
+│  └─ oddswin/
+│     ├─ reconcile.service.js
+│     ├─ youtubeLive.service.js
+│     └─ exclusiveNft.sync.service.js
 ├─ models/
 │  ├─ user.model.js
 │  ├─ trustplay/
 │  │  └─ trustplayInfo.model.js
-│  ├─ system/
-│  │  └─ reconcileState.model.js
-│  └─ oddswin/
-│     ├─ box.model.js
-│     ├─ exclusiveNFT.model.js
-│     ├─ globalConfig.model.js
-│     └─ lottery.model.js
-├─ middleware/
-│  ├─ jwt.js
-│  ├─ authorize.js
-│  └─ requestValidation.js
-├─ services/
-│  ├─ blockchain.service.js
-│  └─ oddswin/
-│     └─ reconcile.service.js
+│  ├─ legal/
+│  │  ├─ legalDocument.model.js
+│  │  ├─ legalDocumentVersion.model.js
+│  │  └─ legalAcceptance.model.js
+│  ├─ oddswin/
+│  │  ├─ lottery.model.js
+│  │  ├─ box.model.js
+│  │  ├─ globalConfig.model.js
+│  │  ├─ exclusiveNFT.model.js
+│  │  └─ liveEventCache.model.js
+│  └─ system/
+│     └─ reconcileState.model.js
 ├─ utils/
-│  ├─ legalAcceptance.js
-│  └─ sendEmail.js
+│  ├─ sendEmail.js
+│  └─ emailTemplates.js
 ├─ scripts/
-│  ├─ dependency-audit.js
-│  └─ security-baseline-check.js
+│  ├─ seed-legal-documents.js
+│  ├─ cleanup-legacy-trustplay-legal.js
+│  ├─ security-baseline-check.js
+│  └─ dependency-audit.js
 ├─ tests/
-│  └─ request-validation.test.js
+│  ├─ request-validation.test.js
+│  └─ env-validation.test.js
 └─ docs/
-   └─ API_ENDPOINTS.md
+   ├─ API_ENDPOINTS.md
+   └─ ENV_VARIABLES.md
 ```
 
-## Que va en cada carpeta
+## 3) Que va en cada capa
 
 ### `config/`
 
-Solo inicializacion tecnica global.
+Solo bootstrap tecnico.
 
-- `env.js`: validacion de variables de entorno requeridas.
-- `db.js`: conexion a MongoDB.
+- `db.js`: conexion y manejo basico de MongoDB.
+- `env.js`: validaciones de configuracion obligatoria y reglas de produccion.
 
 No va logica de negocio aqui.
 
 ### `routes/`
 
-Define endpoints y compone modulos.
+Define contratos HTTP y aplica middleware.
 
-- `api.router.js`: router raiz de la API.
-- `modules/*.routes.js`: rutas por dominio.
-- `modules/oddswin/*`: todas las rutas del juego Oddswin.
-
-En rutas solo:
-
-- middleware de seguridad/validacion
-- llamada al controller
-
-No hacer consultas a DB ni logica compleja aqui.
-
-### `controllers/`
-
-Orquestan la peticion HTTP.
-
-- Leen `req`
-- llaman modelos/servicios
-- devuelven `res`
-
-Subcarpetas:
-
-- `controllers/oddswin/`: casos de uso del juego Oddswin.
-- `controllers/trustplay/`: contenido institucional/legal de la plataforma.
-
-Regla: controller delgado. Si crece mucho, mover logica a `services/` especificos.
-
-### `models/`
-
-Esquemas y modelos de MongoDB.
-
-- `models/user.model.js`: entidad de usuario global.
-- `models/trustplay/*`: datos globales de plataforma.
-- `models/oddswin/*`: datos propios del juego Oddswin.
-- `models/system/*`: estado tecnico de procesos internos (por ejemplo reconciliacion).
-
-No poner reglas HTTP en modelos.
+- No consulta DB directamente.
+- No contiene reglas complejas de negocio.
+- Agrupa endpoints por dominio (`auth`, `users`, `legal`, `oddswin`).
 
 ### `middleware/`
 
-Capas transversales reutilizables.
+Reglas transversales de seguridad y saneamiento.
 
-- `jwt.js`: autenticacion JWT y rol admin.
-- `authorize.js`: autorizacion de recurso (self/admin/wallet).
-- `requestValidation.js`: validacion de payload por endpoint.
+- `jwt.js`: autenticacion y rol admin.
+- `authorize.js`: ownership y permisos por recurso/wallet.
+- `requestValidation.js`: validacion por endpoint.
 
-Todo endpoint sensible debe usar middleware adecuado antes del controller.
+### `controllers/`
+
+Orquestacion HTTP.
+
+- Lee `req`, valida flujo, llama servicios/modelos, responde `res`.
+- Debe permanecer delgado; si crece, mover logica a `services/`.
 
 ### `services/`
 
-Integraciones externas o logica de dominio reutilizable no HTTP.
+Logica reutilizable de dominio e integraciones externas.
 
-- `blockchain.service.js`: acceso a contratos/RPC (hoy enfocado en Oddswin).
-- `services/oddswin/reconcile.service.js`: conciliacion on-chain -> base de datos.
+- On-chain, reconciliacion, sincronizacion, versionado legal.
+- Sin acoplarse a detalles de transporte HTTP.
 
-Si se agrega otro juego, crear servicios por juego (`services/<game>/...`).
+### `models/`
+
+Persistencia y esquemas de datos.
+
+- Un modelo por agregado principal.
+- Indices, defaults y restricciones de datos.
 
 ### `utils/`
 
-Funciones auxiliares puras o de soporte.
+Ayudantes de soporte (plantillas email, envio correo, etc.).
 
-- `legalAcceptance.js`
-- `sendEmail.js`
+No se usa para estado de negocio central.
 
-No guardar estado ni dependencia de request en utils.
+### `scripts/`
 
+Operaciones de mantenimiento y auditoria.
+
+- Seeding legal, limpieza legacy, baseline de seguridad, auditoria de dependencias.
 
 ### `tests/`
 
-Pruebas automaticas ejecutables en CI.
+Tests de regresion y contrato basico de validaciones/config.
 
-- tests de validacion y reglas criticas.
-- naming sugerido: `*.test.js`.
+## 4) Flujos base
 
-### `docs/`
+### Flujo de request
 
-Documentacion tecnica de contrato/API.
+```text
+Client
+  -> route
+  -> middleware(s)
+  -> controller
+  -> service/model
+  -> response
+```
 
-- `API_ENDPOINTS.md`: mapa de endpoints activos.
+### Flujo legal versionado
 
-## Reglas de organizacion (obligatorias)
+```text
+Admin crea version
+  -> publica version
+  -> usuarios consultan version vigente
+  -> usuario acepta
+  -> se guarda evidencia (version, sha256, ip, userAgent)
+```
 
-1. Todo lo de smart contracts de Oddswin vive en:
-   - `controllers/oddswin/*`
-   - `models/oddswin/*`
-   - `routes/modules/oddswin/*`
-   - `services/` especificos de Oddswin
-2. Lo compartido (usuarios, auth, legal) queda fuera de carpetas de juego.
-3. No duplicar rutas en archivos sueltos fuera de `routes/modules/*`.
-4. Toda ruta de escritura debe tener:
-   - autenticacion/autorizacion (si aplica)
-   - validacion de payload
-5. No subir secretos: `.env` nunca se versiona.
+## 5) Reglas de organizacion obligatorias
 
-## Como agregar un nuevo juego (plantilla)
+1. Todo lo de Oddswin vive en `controllers/oddswin`, `routes/modules/oddswin`, `models/oddswin`, `services/oddswin`.
+2. Lo global (auth, users, legal, trustplay) no se mezcla con carpetas de juego.
+3. Cada endpoint de escritura debe tener validacion en `requestValidation.js`.
+4. Endpoints sensibles deben pasar por JWT + autorizacion segun aplique.
+5. No agregar secretos al repositorio (`.env` nunca se versiona).
 
-Para un juego nuevo, por ejemplo `jackpot`:
+## 6) Como agregar un nuevo juego (plantilla)
+
+Para un juego nuevo `jackpot`:
 
 1. Crear:
    - `controllers/jackpot/`
    - `models/jackpot/`
    - `routes/modules/jackpot/`
-   - `services/jackpot/` (si aplica)
-2. Crear rutas `routes/modules/jackpot/*.routes.js`.
-3. Montarlas en `routes/api.router.js`:
-   - legacy solo si es necesario
-   - obligatorio namespace: `/api/games/jackpot/*`
-4. Reusar middleware global (`jwt`, `authorize`, `requestValidation`).
-5. Documentar endpoints nuevos en `docs/API_ENDPOINTS.md`.
-6. Agregar tests y actualizar scripts de verificacion si cambia seguridad base.
+   - `services/jackpot/`
+2. Registrar rutas en `routes/api.router.js` bajo `/api/games/jackpot/*`.
+3. Reusar middleware global (`jwt`, `authorize`, `requestValidation`).
+4. Documentar endpoints en `docs/API_ENDPOINTS.md`.
+5. Agregar tests de validacion para endpoints nuevos.
 
-## Flujo recomendado por endpoint
+## 7) Validacion y release
 
-`Route -> Middleware(s) -> Controller -> Model/Service -> Response`
+Antes de release:
 
-Ejemplo real:
+- `npm run verify:ci`
+- `npm run security:baseline`
+- `npm run audit:deps`
+- Opcional combinado: `npm run verify:full`
 
-`routes/modules/oddswin/oddswin.routes.js`
--> `verifyToken` + `requestValidation` + `authorize`
--> `controllers/oddswin/*.controller.js`
--> `models/oddswin/*.model.js` / `services/blockchain.service.js`
+Referencias:
+
+- Endpoints: `api_Trustplay/docs/API_ENDPOINTS.md`
+- Variables de entorno: `api_Trustplay/docs/ENV_VARIABLES.md`
+- Checklist release: `docs/PRODUCTION_RELEASE_CHECKLIST.md`

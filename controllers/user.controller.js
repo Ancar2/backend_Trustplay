@@ -698,9 +698,9 @@ exports.getSponsorByWallet = async (req, res) => {
             });
         }
 
-        // 5. Check if ACTIVE in the specific Lottery (if provided)
+        // 5. Verificar si estÃ¡ ACTIVO en la LoterÃ­a especÃ­fica (si se proporciona)
         let isActive = false;
-        const { lotteryAddress } = req.query; // Get from query
+        const { lotteryAddress } = req.query; // Obtener desde query
 
         if (lotteryAddress) {
             const boxCount = await Box.countDocuments({
@@ -737,10 +737,10 @@ exports.getReferralSummary = async (req, res) => {
             return res.status(404).json({ msj: "Usuario no encontrado para esta wallet" });
         }
 
-        // STRICT FILTERING: Only count referrals for THIS specific wallet
+        // FILTRADO ESTRICTO: Solo contar referidos para ESTA wallet especÃ­fica
         const targetWallet = wallet.toLowerCase();
 
-        // 1. Direct Referrals Search: Find users who have potential link strictly to current wallet
+        // 1. BÃºsqueda de Referidos Directos: Encontrar usuarios que tengan un enlace potencial estrictamente a la wallet actual
         const directQuery = {
             $or: [
                 { sponsor: targetWallet },
@@ -750,23 +750,23 @@ exports.getReferralSummary = async (req, res) => {
 
         const directUsers = await User.find(directQuery).select("wallets sponsor sponsorships");
 
-        // 2. Identify specifically WHICH wallets are sponsored by ME (the connected wallet)
+        // 2. Identificar especÃ­ficamente QUÃ‰ wallets son patrocinadas por MÃ (la wallet conectada)
         const mySponsoredWallets = [];
 
         directUsers.forEach(user => {
-            // Normalize user data
+            // Normalizar datos de usuario
             const userGlobalSponsor = user.sponsor ? user.sponsor.toLowerCase() : null;
             const hasSponsorships = user.sponsorships && user.sponsorships.length > 0;
 
             if (hasSponsorships) {
-                // STRICT MODE: Only check the sponsorships array
+                // MODO ESTRICTO: Solo verificar el array de patrocinios
                 user.sponsorships.forEach(s => {
                     if (s.sponsor && s.sponsor.toLowerCase() === targetWallet) {
                         mySponsoredWallets.push(s.wallet.toLowerCase());
                     }
                 });
             } else {
-                // LEGACY MODE: Use global sponsor for all wallets
+                // MODO LEGADO: Usar patrocinador global para todas las wallets
                 if (userGlobalSponsor === targetWallet) {
                     user.wallets.forEach(w => mySponsoredWallets.push(w.toLowerCase()));
                 }
@@ -806,17 +806,17 @@ exports.getReferralSummary = async (req, res) => {
                 ]
             };
 
-            // Find users who are sponsored by my Direct Referrals
+            // Encontrar usuarios que son patrocinados por mis Referidos Directos
             const indirectUsers = await User.find(indirectQuery).select("wallets sponsor sponsorships");
-            const indirectWalletsList = []; // Store confirmed indirect wallets
+            const indirectWalletsList = []; // Almacenar wallets indirectas confirmadas
 
-            // Count distinct wallets that are specifically sponsored by one of "mySponsoredWallets"
+            // Contar wallets distintas que son patrocinadas especÃ­ficamente por uno de "mySponsoredWallets"
             indirectUsers.forEach(u => {
                 const uGlobalSponsor = u.sponsor ? u.sponsor.toLowerCase() : null;
                 const hasSponsorships = u.sponsorships && u.sponsorships.length > 0;
 
                 if (hasSponsorships) {
-                    // STRICT MODE
+                    // MODO ESTRICTO
                     u.sponsorships.forEach(s => {
                         const actualSponsor = s.sponsor ? s.sponsor.toLowerCase() : null;
                         if (actualSponsor && mySponsoredWallets.includes(actualSponsor)) {
@@ -825,10 +825,10 @@ exports.getReferralSummary = async (req, res) => {
                         }
                     });
                 } else {
-                    // LEGACY MODE
+                    // MODO LEGADO
                     u.wallets.forEach(w => {
                         const wLower = w.toLowerCase();
-                        // Global sponsor is the effective sponsor here
+                        // El patrocinador global es el patrocinador efectivo aquÃ­
                         if (uGlobalSponsor && mySponsoredWallets.includes(uGlobalSponsor)) {
                             indirectCount++;
                             indirectWalletsList.push(wLower);
@@ -837,14 +837,14 @@ exports.getReferralSummary = async (req, res) => {
                 }
             });
 
-            // 4.1 Calculate "Active" Indirect Referrals (Users & Volume)
+            // 4.1 Calcular Referidos Indirectos "Activos" (Usuarios y Volumen)
             if (lotteryAddress && indirectCount > 0) {
-                // Volume
+                // Volumen
                 activeIndirectVolume = await Box.countDocuments({
                     direccionLoteria: lotteryAddress.toLowerCase(),
                     owner: { $in: indirectWalletsList }
                 });
-                // Unique Users
+                // Usuarios Ãšnicos
                 const uniqueIndirectBuyers = await Box.distinct("owner", {
                     direccionLoteria: lotteryAddress.toLowerCase(),
                     owner: { $in: indirectWalletsList }
@@ -854,9 +854,9 @@ exports.getReferralSummary = async (req, res) => {
         }
 
         res.json({
-            direct: directCount, // Total registered referrals
-            activeDirectUsers: activeDirectUsers, // Unique buyers
-            activeDirectVolume: activeDirectVolume, // Total boxes bought
+            direct: directCount, // Total de referidos registrados
+            activeDirectUsers: activeDirectUsers, // Compradores Ãºnicos
+            activeDirectVolume: activeDirectVolume, // Total de cajas compradas
 
             indirect: indirectCount,
             activeIndirectUsers: activeIndirectUsers,
@@ -877,7 +877,7 @@ exports.getDirectReferrals = async (req, res) => {
 
         const targetWallet = wallet.toLowerCase();
 
-        // Query: Find users where (sponsor == target) OR (sponsorships.sponsor == target)
+        // Consulta: Encontrar usuarios donde (sponsor == target) O (sponsorships.sponsor == target)
         const directQuery = {
             $or: [
                 { sponsor: targetWallet },
@@ -901,22 +901,22 @@ exports.getDirectReferrals = async (req, res) => {
             });
         });
 
-        // Optional: Aggregate Box Counts for these wallets in Active Lottery?
-        // For now, returning basic list.
+        // Opcional: Agregar conteo de cajas para estas wallets en LoterÃ­a Activa?
+        // Por ahora, retornando lista bÃ¡sica.
 
         const status = req.query.status || 'all'; // 'all', 'active', 'inactive'
         const lotteryAddress = req.query.lotteryAddress;
         const search = typeof req.query.search === "string" ? req.query.search.trim().toLowerCase() : "";
 
-        // --- OPTIMIZATION: Fetch Active Owners ONCE ---
+        // --- OPTIMIZACIÃ“N: Obtener Propietarios Activos UNA VEZ ---
         const activeOwnersSet = new Set();
         const boxCountsMap = new Map();
 
         if (lotteryAddress) {
-            // 1. Get all owners who bought in this lottery
+            // 1. Obtener todos los propietarios que compraron en esta loterÃ­a
             const owners = await Box.find({ direccionLoteria: lotteryAddress.toLowerCase() }).select('owner');
 
-            // 2. Build Set and Map for O(1) checks
+            // 2. Construir Set y Map para verificaciones O(1)
             owners.forEach(box => {
                 const w = box.owner.toLowerCase();
                 activeOwnersSet.add(w);
@@ -924,7 +924,7 @@ exports.getDirectReferrals = async (req, res) => {
             });
         }
 
-        // --- FILTER & ENRICH LIST ---
+        // --- FILTRAR Y ENRIQUECER LISTA ---
         let filteredList = [];
 
         referralList.forEach(ref => {
@@ -938,15 +938,15 @@ exports.getDirectReferrals = async (req, res) => {
                 }
             }
 
-            // Determine Active Status & Box Count
+            // Determinar Estado Activo y Conteo de Cajas
             const count = boxCountsMap.get(walletLower) || 0;
             const isActive = activeOwnersSet.has(walletLower);
 
-            // Assign computed props
+            // Asignar propiedades calculadas
             ref.boxCount = count;
             ref.isActive = isActive;
 
-            // Apply Filter
+            // Aplicar Filtro
             if (status === 'active') {
                 if (isActive) filteredList.push(ref);
             } else if (status === 'inactive') {
@@ -957,7 +957,7 @@ exports.getDirectReferrals = async (req, res) => {
             }
         });
 
-        // --- PAGINATION ---
+        // --- PAGINACIÃ“N ---
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 50;
         const startIndex = (page - 1) * limit;
@@ -967,12 +967,12 @@ exports.getDirectReferrals = async (req, res) => {
         const totalPages = Math.ceil(totalItems / limit);
         const paginatedReferrals = filteredList.slice(startIndex, endIndex);
 
-        // --- ENRICH WITH DIRECT REFERRALS STATS (Active / Total) ---
+        // --- ENRIQUECER CON ESTADÃ STICAS DE REFERIDOS DIRECTOS (Activos / Total) ---
         // Optimización: Calcular Active/Total para cada referido paginado
         await Promise.all(paginatedReferrals.map(async (ref) => {
             const refWallet = ref.wallet.toLowerCase();
 
-            // 1. Find potential downlines
+            // 1. Encontrar posibles lÃ­neas descendentes
             const downlines = await User.find({
                 $or: [
                     { sponsor: refWallet },
@@ -980,13 +980,13 @@ exports.getDirectReferrals = async (req, res) => {
                 ]
             }).select("wallets sponsor sponsorships");
 
-            // 2. Filter strictly
+            // 2. Filtrar estrictamente
             let myDownlineWallets = [];
             downlines.forEach(u => {
                 myDownlineWallets.push(...getWalletsSponsoredBy(u, refWallet));
             });
 
-            // 3. Calc Stats
+            // 3. Calcular EstadÃ­sticas
             const uniqueDownlines = [...new Set(myDownlineWallets)];
             const totalDirects = uniqueDownlines.length;
             let activeInLottery = 0;
@@ -1025,7 +1025,7 @@ exports.getIndirectReferrals = async (req, res) => {
 
         const targetWallet = wallet.toLowerCase();
 
-        // 1. Find DIRECT Referrals first (Level 1)
+        // 1. Encontrar Referidos DIRECTOS primero (Nivel 1)
         const directQuery = {
             $or: [
                 { sponsor: targetWallet },
@@ -1059,7 +1059,7 @@ exports.getIndirectReferrals = async (req, res) => {
             });
         }
 
-        // 2. Find INDIRECT Referrals (Level 2) - Users sponsored by myDirectWallets
+        // 2. Encontrar Referidos INDIRECTOS (Nivel 2) - Usuarios patrocinados por myDirectWallets
         const indirectQuery = {
             $or: [
                 { sponsor: { $in: myDirectWallets } },
@@ -1083,14 +1083,14 @@ exports.getIndirectReferrals = async (req, res) => {
                             username: user.username || 'Usuario',
                             photo: user.photo,
                             boxCount: 0,
-                            sponsorWallet: actualSponsor // Helpful to know who referred them
+                            sponsorWallet: actualSponsor // Ãštil para saber quiÃ©n los refiriÃ³
                         });
                     }
                 });
             } else {
                 user.wallets.forEach(w => {
                     const wLower = w.toLowerCase();
-                    // Global sponsor check
+                    // VerificaciÃ³n de patrocinador global
                     if (userGlobalSponsor && myDirectWallets.includes(userGlobalSponsor)) {
                         referralList.push({
                             wallet: wLower,
@@ -1104,12 +1104,12 @@ exports.getIndirectReferrals = async (req, res) => {
             }
         });
 
-        // 3. Status Filtering & Enrichment Logic (Same as Direct)
+        // 3. LÃ³gica de Filtrado y Enriquecimiento de Estado (Igual que Directo)
         const status = req.query.status || 'all'; // 'all', 'active', 'inactive'
         const lotteryAddress = req.query.lotteryAddress;
         const search = typeof req.query.search === "string" ? req.query.search.trim().toLowerCase() : "";
 
-        // --- OPTIMIZATION: Fetch Active Owners ONCE ---
+        // --- OPTIMIZACIÃ“N: Obtener Propietarios Activos UNA VEZ ---
         const activeOwnersSet = new Set();
         const boxCountsMap = new Map();
 
@@ -1122,7 +1122,7 @@ exports.getIndirectReferrals = async (req, res) => {
             });
         }
 
-        // --- FILTER & ENRICH LIST ---
+        // --- FILTRAR Y ENRIQUECER LISTA ---
         let filteredList = [];
 
         referralList.forEach(ref => {
@@ -1151,7 +1151,7 @@ exports.getIndirectReferrals = async (req, res) => {
             }
         });
 
-        // --- PAGINATION ---
+        // --- PAGINACIÃ“N ---
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 50;
         const startIndex = (page - 1) * limit;
@@ -1161,11 +1161,11 @@ exports.getIndirectReferrals = async (req, res) => {
         const totalPages = Math.ceil(totalItems / limit);
         const paginatedReferrals = filteredList.slice(startIndex, endIndex);
 
-        // --- ENRICH WITH DIRECT REFERRALS STATS (Active / Total) for Indirects too ---
+        // --- ENRIQUECER CON ESTADÃ STICAS DE REFERIDOS DIRECTOS (Activos / Total) para Indirectos tambiÃ©n ---
         await Promise.all(paginatedReferrals.map(async (ref) => {
             const refWallet = ref.wallet.toLowerCase();
 
-            // 1. Find potential downlines of this indirect referral
+            // 1. Encontrar posibles lÃ­neas descendentes de este referido indirecto
             const downlines = await User.find({
                 $or: [
                     { sponsor: refWallet },
@@ -1173,7 +1173,7 @@ exports.getIndirectReferrals = async (req, res) => {
                 ]
             }).select("wallets sponsor sponsorships");
 
-            // 2. Filter strictly
+            // 2. Filtrar estrictamente
             let myReferralsDownlines = [];
             downlines.forEach(u => {
                 const uGlobal = u.sponsor ? u.sponsor.toLowerCase() : null;
@@ -1192,7 +1192,7 @@ exports.getIndirectReferrals = async (req, res) => {
                 }
             });
 
-            // 3. Calc Stats
+            // 3. Calcular EstadÃ­sticas
             const totalDirects = myReferralsDownlines.length;
             let activeInLottery = 0;
 
@@ -1306,12 +1306,12 @@ exports.getTotalEarnings = async (req, res) => {
             }
         } catch (err) {
             console.error("Error calculating NFT Royalties:", err);
-            // Non-blocking, just 0
+            // No bloqueante, solo 0
         }
 
         res.status(200).json({
             teamRewards: totalTeamRewardsGlobal,
-            prizesWon: totalPrizesGlobal + totalNftRoyaltiesGlobal, // Inclusive of NFT royalties as per request
+            prizesWon: totalPrizesGlobal + totalNftRoyaltiesGlobal, // Incluye regalÃ­as NFT segÃºn solicitud
             totalEarnings: totalTeamRewardsGlobal + totalPrizesGlobal + totalNftRoyaltiesGlobal,
             walletEarnings: targetWallet ? (totalTeamRewardsSpecific + totalPrizesSpecific + totalNftRoyaltiesSpecific) : 0,
             lostTeamRewards: totalTeamRewardsLostGlobal,
