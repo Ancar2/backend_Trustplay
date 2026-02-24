@@ -35,6 +35,19 @@ const buildLegalRequiredErrorPayload = (legalResolution) => {
     };
 };
 
+const resolvePendingDocumentsFromLegalResolution = (legalResolution) => (
+    Array.isArray(legalResolution?.pendingDocuments) ? legalResolution.pendingDocuments : []
+);
+
+const didClientExplicitlyAcceptLegal = (legalAcceptancePayload) => (
+    legalAcceptancePayload?.accepted === true
+);
+
+const buildLegalStatusPayload = (pendingDocuments = []) => ({
+    hasPending: pendingDocuments.length > 0,
+    pendingDocuments
+});
+
 const toSafeUserPayload = (user) => ({
     _id: user._id,
     username: user.username,
@@ -113,7 +126,8 @@ exports.login = async (req, res) => {
                 source: 'login_form'
             });
 
-            if (!legalResolution.ok) {
+            const pendingDocuments = resolvePendingDocumentsFromLegalResolution(legalResolution);
+            if (!legalResolution.ok && didClientExplicitlyAcceptLegal(legalAcceptance)) {
                 return res.status(400).json(buildLegalRequiredErrorPayload(legalResolution));
             }
 
@@ -141,7 +155,8 @@ exports.login = async (req, res) => {
             const exposeTokenInBody = process.env.EXPOSE_TOKEN_IN_BODY !== "false";
             const responsePayload = {
                 Welcome: `Bienvenido a ODDSWIN ${user.username}`,
-                user: toSafeUserPayload(user)
+                user: toSafeUserPayload(user),
+                legal: buildLegalStatusPayload(pendingDocuments)
             };
 
             if (exposeTokenInBody) {
@@ -184,20 +199,22 @@ const generateToken = (user) => {
     );
 };
 
-const sendTokenResponse = (user, statusCode, res) => {
+const sendTokenResponse = (user, statusCode, res, options = {}) => {
+    const pendingDocuments = Array.isArray(options?.pendingDocuments) ? options.pendingDocuments : [];
     const token = generateToken(user);
     const exposeTokenInBody = process.env.EXPOSE_TOKEN_IN_BODY !== "false";
-    const options = buildAuthCookieOptions();
+    const cookieOptions = buildAuthCookieOptions();
     const responsePayload = {
         Welcome: `Bienvenido a ODDSWIN ${user.username}`,
-        user: toSafeUserPayload(user)
+        user: toSafeUserPayload(user),
+        legal: buildLegalStatusPayload(pendingDocuments)
     };
 
     if (exposeTokenInBody) {
         responsePayload.token = token;
     }
 
-    res.status(statusCode).cookie('token', token, options).json(responsePayload);
+    res.status(statusCode).cookie('token', token, cookieOptions).json(responsePayload);
 };
 
 const verifyGoogleToken = async (token) => {
@@ -308,7 +325,8 @@ exports.socialLogin = async (req, res) => {
                 source: 'social_login'
             });
 
-            if (!legalResolution.ok) {
+            const pendingDocuments = resolvePendingDocumentsFromLegalResolution(legalResolution);
+            if (!legalResolution.ok && didClientExplicitlyAcceptLegal(legalAcceptance)) {
                 return res.status(400).json(buildLegalRequiredErrorPayload(legalResolution));
             }
 
@@ -324,7 +342,7 @@ exports.socialLogin = async (req, res) => {
             }
 
             await user.save();
-            sendTokenResponse(user, 200, res);
+            sendTokenResponse(user, 200, res, { pendingDocuments });
 
         } else {
             const legalValidation = await ensureNewUserLegalAcceptance({

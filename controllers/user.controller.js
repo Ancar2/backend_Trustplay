@@ -15,6 +15,16 @@ const LOTTERY_INFO_ABI = [
     "function infoLottery() view returns (tuple(address stableCoin, uint128 boxPrice, uint128 boxesSold, uint128 totalBoxes, uint128 winningNumber))"
 ];
 const ERC20_DECIMALS_ABI = ["function decimals() view returns (uint8)"];
+const PHONE_COUNTRY_CODE_REGEX = /^\+[1-9]\d{0,3}$/;
+const PHONE_NATIONAL_REGEX = /^\d{6,15}$/;
+
+const normalizePhoneCountryCode = (value) => (
+    typeof value === "string" ? value.trim() : ""
+);
+
+const normalizePhoneNationalNumber = (value) => (
+    typeof value === "string" ? value.replace(/\D+/g, "") : ""
+);
 
 const canMutateUser = (req, targetUserId) => (
     req.user
@@ -516,9 +526,48 @@ exports.updateProfile = async (req, res) => {
             return res.status(404).json({ msj: "Usuario no encontrado" });
         }
 
-        user.username = req.body.username || user.username;
-        user.email = req.body.email || user.email;
-        user.photo = req.body.photo || user.photo;
+        const nextUsername = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+        const nextEmail = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+        const nextPhoto = typeof req.body?.photo === "string" ? req.body.photo.trim() : "";
+
+        if (nextUsername) {
+            user.username = nextUsername;
+        }
+
+        if (nextEmail) {
+            user.email = nextEmail;
+        }
+
+        if (nextPhoto) {
+            user.photo = nextPhoto;
+        }
+
+        if (req.body?.phone !== undefined) {
+            if (!req.body.phone || typeof req.body.phone !== "object" || Array.isArray(req.body.phone)) {
+                return res.status(400).json({ msj: "phone debe ser un objeto con indicativo y número." });
+            }
+
+            const countryCode = normalizePhoneCountryCode(req.body.phone.countryCode);
+            const nationalNumber = normalizePhoneNationalNumber(req.body.phone.nationalNumber);
+
+            if (!countryCode || !nationalNumber) {
+                return res.status(400).json({ msj: "El celular requiere indicativo y número." });
+            }
+
+            if (!PHONE_COUNTRY_CODE_REGEX.test(countryCode)) {
+                return res.status(400).json({ msj: "El indicativo del celular no es válido." });
+            }
+
+            if (!PHONE_NATIONAL_REGEX.test(nationalNumber)) {
+                return res.status(400).json({ msj: "El número de celular no es válido." });
+            }
+
+            user.phone = {
+                countryCode,
+                nationalNumber,
+                e164: `${countryCode}${nationalNumber}`
+            };
+        }
 
         const updatedUser = await user.save();
 
@@ -530,6 +579,7 @@ exports.updateProfile = async (req, res) => {
             _id: updatedUser._id,
             username: updatedUser.username,
             email: updatedUser.email,
+            phone: updatedUser.phone || null,
             role: updatedUser.role,
             photo: updatedUser.photo,
             token: token,

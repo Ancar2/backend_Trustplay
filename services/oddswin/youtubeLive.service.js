@@ -44,7 +44,7 @@ const buildYoutubeSearchUrl = ({ apiKey, channelId, eventType }) => {
         channelId,
         eventType,
         type: "video",
-        maxResults: "1",
+        maxResults: "10",
         order: "date",
         key: apiKey,
     });
@@ -52,10 +52,10 @@ const buildYoutubeSearchUrl = ({ apiKey, channelId, eventType }) => {
     return `https://www.googleapis.com/youtube/v3/search?${params.toString()}`;
 };
 
-const buildYoutubeVideoDetailsUrl = ({ apiKey, videoId }) => {
+const buildYoutubeVideoDetailsUrl = ({ apiKey, videoIds }) => {
     const params = new URLSearchParams({
         part: "liveStreamingDetails,snippet",
-        id: videoId,
+        id: videoIds.join(","),
         key: apiKey,
     });
 
@@ -98,25 +98,79 @@ const getNextFridayAt11PmBogotaIso = () => {
     return new Date(targetUtcMs).toISOString();
 };
 
-const selectFirstVideo = (searchData) => {
-    const item = Array.isArray(searchData?.items) ? searchData.items[0] : null;
-    const videoId = item?.id?.videoId;
-    if (!videoId || !YOUTUBE_VIDEO_ID_REGEX.test(videoId)) return null;
-    return {
-        videoId,
-        title: item?.snippet?.title || "",
-    };
+const toTimestamp = (value) => {
+    if (!value) return Number.NaN;
+    const parsed = new Date(value).getTime();
+    return Number.isFinite(parsed) ? parsed : Number.NaN;
 };
 
-const resolveScheduledAt = (videoDetailsData, fallbackIso) => {
-    const details = Array.isArray(videoDetailsData?.items) ? videoDetailsData.items[0] : null;
-    const liveDetails = details?.liveStreamingDetails || {};
+const extractVideoCandidates = (searchData) => {
+    const items = Array.isArray(searchData?.items) ? searchData.items : [];
+    return items
+        .map((item) => {
+            const videoId = item?.id?.videoId;
+            if (!videoId || !YOUTUBE_VIDEO_ID_REGEX.test(videoId)) return null;
+            return {
+                videoId,
+                title: item?.snippet?.title || "",
+                publishedAt: item?.snippet?.publishedAt || "",
+            };
+        })
+        .filter(Boolean);
+};
 
-    return (
-        liveDetails.scheduledStartTime
-        || liveDetails.actualStartTime
-        || fallbackIso
-    );
+const buildDetailsMap = (videoDetailsData) => {
+    const details = Array.isArray(videoDetailsData?.items) ? videoDetailsData.items : [];
+    const map = new Map();
+    details.forEach((item) => {
+        const videoId = item?.id;
+        if (!videoId || !YOUTUBE_VIDEO_ID_REGEX.test(videoId)) return;
+        const liveDetails = item?.liveStreamingDetails || {};
+        map.set(videoId, {
+            title: item?.snippet?.title || "",
+            scheduledStartTime: liveDetails?.scheduledStartTime || "",
+            actualStartTime: liveDetails?.actualStartTime || "",
+            publishedAt: item?.snippet?.publishedAt || "",
+        });
+    });
+    return map;
+};
+
+const resolvePreferredVideo = ({ candidates, detailsMap, eventType }) => {
+    if (!Array.isArray(candidates) || candidates.length === 0) return null;
+
+    const enriched = candidates.map((candidate, index) => {
+        const details = detailsMap.get(candidate.videoId) || {};
+        const title = details.title || candidate.title || "";
+        const scheduledAt = details.scheduledStartTime || "";
+        const actualAt = details.actualStartTime || "";
+        const publishedAt = details.publishedAt || candidate.publishedAt || "";
+
+        // live: queremos el primero que empezó (actualStartTime más antiguo)
+        // upcoming: queremos el primero que va a empezar (scheduledStartTime más próximo)
+        const preferredTime = eventType === "live"
+            ? (actualAt || scheduledAt || publishedAt)
+            : (scheduledAt || publishedAt || actualAt);
+
+        return {
+            videoId: candidate.videoId,
+            title,
+            scheduledAt,
+            actualAt,
+            sortTimestamp: toTimestamp(preferredTime),
+            originalIndex: index,
+        };
+    });
+
+    const withTime = enriched.filter((item) => Number.isFinite(item.sortTimestamp));
+    const sorted = (withTime.length > 0 ? withTime : enriched).sort((a, b) => {
+        const left = Number.isFinite(a.sortTimestamp) ? a.sortTimestamp : Number.MAX_SAFE_INTEGER;
+        const right = Number.isFinite(b.sortTimestamp) ? b.sortTimestamp : Number.MAX_SAFE_INTEGER;
+        if (left !== right) return left - right;
+        return a.originalIndex - b.originalIndex;
+    });
+
+    return sorted[0] || null;
 };
 
 const fetchYoutubeLivePayload = async () => {
@@ -131,8 +185,21 @@ const fetchYoutubeLivePayload = async () => {
         eventType: "live",
     }));
 
-    let selected = selectFirstVideo(liveSearch);
+    const liveCandidates = extractVideoCandidates(liveSearch);
+    let selected = null;
     let status = "live";
+
+    if (liveCandidates.length > 0) {
+        const liveDetailsData = await fetchJson(buildYoutubeVideoDetailsUrl({
+            apiKey,
+            videoIds: liveCandidates.map((item) => item.videoId),
+        }));
+        selected = resolvePreferredVideo({
+            candidates: liveCandidates,
+            detailsMap: buildDetailsMap(liveDetailsData),
+            eventType: "live",
+        });
+    }
 
     if (!selected) {
         const upcomingSearch = await fetchJson(buildYoutubeSearchUrl({
@@ -140,7 +207,18 @@ const fetchYoutubeLivePayload = async () => {
             channelId,
             eventType: "upcoming",
         }));
-        selected = selectFirstVideo(upcomingSearch);
+        const upcomingCandidates = extractVideoCandidates(upcomingSearch);
+        if (upcomingCandidates.length > 0) {
+            const upcomingDetailsData = await fetchJson(buildYoutubeVideoDetailsUrl({
+                apiKey,
+                videoIds: upcomingCandidates.map((item) => item.videoId),
+            }));
+            selected = resolvePreferredVideo({
+                candidates: upcomingCandidates,
+                detailsMap: buildDetailsMap(upcomingDetailsData),
+                eventType: "upcoming",
+            });
+        }
         status = "upcoming";
     }
 
@@ -149,12 +227,7 @@ const fetchYoutubeLivePayload = async () => {
     }
 
     const fallbackIso = getNextFridayAt11PmBogotaIso();
-    const videoDetailsData = await fetchJson(buildYoutubeVideoDetailsUrl({
-        apiKey,
-        videoId: selected.videoId,
-    }));
-
-    const scheduledAt = resolveScheduledAt(videoDetailsData, fallbackIso);
+    const scheduledAt = selected.scheduledAt || selected.actualAt || fallbackIso;
 
     return {
         status,

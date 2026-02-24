@@ -597,6 +597,75 @@ exports.announceLotteryEvent = async (req, res) => {
     }
 };
 
+exports.setLotteryResultVideo = async (req, res) => {
+    try {
+        const { address } = req.params;
+        const { videoUrl, videoTitle } = req.body || {};
+        const normalizedAddress = String(address || "").toLowerCase().trim();
+
+        if (!normalizedAddress) {
+            return res.status(400).json({ msj: "Dirección de evento inválida" });
+        }
+
+        const videoId = extractYoutubeVideoId(String(videoUrl || ""));
+        if (!videoId) {
+            return res.status(400).json({ msj: "Debes enviar un videoId o enlace válido de YouTube" });
+        }
+
+        const videoEmbedUrl = buildCanonicalYoutubeEmbedUrl(videoId);
+        if (!videoEmbedUrl) {
+            return res.status(400).json({ msj: "No se pudo normalizar el enlace del video" });
+        }
+
+        const lottery = await Lottery.findOne({ address: normalizedAddress });
+        if (!lottery) {
+            return res.status(404).json({ msj: "Evento no encontrado para asignar video" });
+        }
+
+        const currentDrawEvent = lottery.drawEvent && typeof lottery.drawEvent.toObject === "function"
+            ? lottery.drawEvent.toObject()
+            : (lottery.drawEvent || {});
+
+        const hasWinner = Boolean(
+            lottery.completed
+            || lottery.setWinnerTxHash
+            || Number(lottery.winningNumber || 0) > 0
+        );
+
+        const canAssignVideo = hasWinner || Boolean(currentDrawEvent?.announced);
+        if (!canAssignVideo) {
+            return res.status(409).json({
+                msj: "Primero debes anunciar el evento o finalizarlo para fijar un video"
+            });
+        }
+
+        lottery.drawEvent = {
+            ...currentDrawEvent,
+            announced: Boolean(currentDrawEvent?.announced),
+            videoId,
+            videoTitle: String(videoTitle || currentDrawEvent?.videoTitle || "").trim(),
+            videoEmbedUrl,
+            videoDetectedAt: new Date(),
+            resultLocked: true,
+            resultLockedAt: new Date(),
+        };
+
+        await lottery.save();
+
+        return res.status(200).json({
+            ok: true,
+            msj: hasWinner
+                ? "Video oficial de resultados actualizado"
+                : "Video de transmisión fijado manualmente",
+            drawEvent: lottery.drawEvent,
+            lotteryAddress: lottery.address,
+        });
+    } catch (error) {
+        console.error("Error setLotteryResultVideo:", error);
+        return res.status(500).json({ msj: "Error interno actualizando video de resultados" });
+    }
+};
+
 exports.getNextLive = async (req, res) => {
     try {
         const forceRaw = String(req.query?.force || "").toLowerCase();
@@ -605,14 +674,52 @@ exports.getNextLive = async (req, res) => {
         const hasLotteryAddress = /^0x[a-f0-9]{40}$/i.test(lotteryAddress);
 
         let lotteryScheduledAtIso = "";
+        let lotteryManualVideoId = "";
+        let lotteryManualVideoTitle = "";
+        let lotteryManualVideoLocked = false;
+        let lotteryCompleted = false;
 
         if (hasLotteryAddress) {
-            const lottery = await Lottery.findOne({ address: lotteryAddress }).select("drawEvent");
+            const lottery = await Lottery.findOne({ address: lotteryAddress }).select(
+                "drawEvent completed setWinnerTxHash winningNumber"
+            );
             const drawEvent = lottery?.drawEvent && typeof lottery.drawEvent.toObject === "function"
                 ? lottery.drawEvent.toObject()
                 : (lottery?.drawEvent || {});
 
             lotteryScheduledAtIso = toIsoOrEmpty(drawEvent?.scheduledAt);
+            lotteryManualVideoId = extractYoutubeVideoId(
+                String(drawEvent?.videoId || drawEvent?.videoEmbedUrl || "")
+            );
+            lotteryManualVideoTitle = String(drawEvent?.videoTitle || "").trim();
+            lotteryManualVideoLocked = Boolean(drawEvent?.resultLocked);
+            lotteryCompleted = Boolean(
+                lottery?.completed
+                || lottery?.setWinnerTxHash
+                || Number(lottery?.winningNumber || 0) > 0
+            );
+        }
+
+        if (hasLotteryAddress && lotteryManualVideoLocked && lotteryManualVideoId) {
+            const embedUrl = buildCanonicalYoutubeEmbedUrl(lotteryManualVideoId);
+            const scheduledAt = lotteryScheduledAtIso || getNextFridayAt11PmBogotaIso();
+            const scheduledMs = new Date(scheduledAt).getTime();
+            const isFutureSchedule = Number.isFinite(scheduledMs) && scheduledMs > Date.now();
+            const manualStatus = lotteryCompleted ? "recorded" : (isFutureSchedule ? "upcoming" : "live");
+
+            return res.status(200).json({
+                ok: true,
+                status: manualStatus,
+                scheduledAt,
+                timezone: DEFAULT_TIMEZONE,
+                source: "lottery_manual_video",
+                cached: false,
+                checkedAt: new Date().toISOString(),
+                videoId: lotteryManualVideoId,
+                ...(lotteryManualVideoTitle ? { title: lotteryManualVideoTitle } : {}),
+                embedUrl,
+                ...(lotteryScheduledAtIso ? { lotteryScheduledAt: lotteryScheduledAtIso } : {}),
+            });
         }
 
         const payload = await getNextLiveWithCache({ forceRefresh });
