@@ -59,6 +59,7 @@ router.post(
     boxController.registerBoxPurchase
 );
 router.get("/boxes/user", authMiddleware.verifyToken, boxController.getUserBoxes);
+router.get("/boxes/count", authMiddleware.verifyToken, boxController.getBoxesCountByOwnerAndLottery);
 router.get("/boxes/lottery/:address", boxController.getBoxesByLotteryAddress);
 
 // --- Player (Oddswin) ---

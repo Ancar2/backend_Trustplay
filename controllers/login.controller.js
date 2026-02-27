@@ -105,7 +105,12 @@ exports.login = async (req, res) => {
         const user = await User.findOne({ email });
 
         if (!user) {
-            return res.status(401).json({ error: "Credenciales inválidas" }); // Mensaje genérico por seguridad
+            return res.status(401).json({ error: "Credenciales incorrectas" }); // Mensaje genérico por seguridad
+        }
+
+        const hasLocalPassword = typeof user.password === "string" && user.password.trim().length > 0;
+        if (!hasLocalPassword) {
+            return res.status(401).json({ error: "Credenciales incorrectas" });
         }
 
         // Verificar contraseña
@@ -166,7 +171,7 @@ exports.login = async (req, res) => {
             res.status(200).cookie('token', token, options).json(responsePayload);
 
         } else {
-            return res.status(401).json({ error: "Credenciales inválidas" });
+            return res.status(401).json({ error: "Credenciales incorrectas" });
         }
 
     } catch (error) {

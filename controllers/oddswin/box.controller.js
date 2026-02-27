@@ -243,7 +243,10 @@ exports.getUserBoxes = async (req, res) => {
                 }
             },
             {
-                $unwind: "$lotteryInfo"
+                $unwind: {
+                    path: "$lotteryInfo",
+                    preserveNullAndEmptyArrays: true
+                }
             },
             {
                 $project: {
@@ -256,6 +259,7 @@ exports.getUserBoxes = async (req, res) => {
                     lotteryName: "$lotteryInfo.name",
                     lotterySymbol: "$lotteryInfo.symbol",
                     lotteryAddress: "$direccionLoteria",
+                    lotteryTotalBoxes: "$lotteryInfo.totalBoxes",
                     lotteryImage: "$lotteryInfo.image",
                     hash: "$hashDeLaTransaccion"
                 }
@@ -284,6 +288,28 @@ exports.getUserBoxes = async (req, res) => {
     } catch (error) {
         console.error("Error getUserBoxes:", error);
         res.status(500).json({ msj: "Error interno obteniendo boxes" });
+    }
+};
+
+// Obtener conteo de cajas por owner y loteria (sin depender de joins)
+exports.getBoxesCountByOwnerAndLottery = async (req, res) => {
+    try {
+        const lotteryAddress = normalizeWallet(req.query.lotteryAddress);
+        const owner = normalizeWallet(req.query.owner);
+
+        if (!lotteryAddress || !owner) {
+            return res.status(400).json({ msj: "lotteryAddress y owner son requeridos" });
+        }
+
+        const totalBoxes = await Box.countDocuments({
+            direccionLoteria: lotteryAddress,
+            owner
+        });
+
+        return res.status(200).json({ totalBoxes });
+    } catch (error) {
+        console.error("Error getBoxesCountByOwnerAndLottery:", error);
+        return res.status(500).json({ msj: "Error interno obteniendo conteo de cajas" });
     }
 };
 // Obtener todas las boxes de una lotería específica (Para Admin Historial)
