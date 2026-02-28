@@ -719,7 +719,13 @@ exports.getNextLive = async (req, res) => {
             });
         }
 
-        const payload = await getNextLiveWithCache({ forceRefresh });
+        const payload = await getNextLiveWithCache({
+            forceRefresh,
+            preferredNotBefore: lotteryScheduledAtIso || "",
+            cacheKeySuffix: hasLotteryAddress
+                ? `${lotteryAddress}_${lotteryScheduledAtIso || "sin_fecha"}`
+                : "",
+        });
         const response = { ...payload };
         const normalizedResponseVideoId = extractYoutubeVideoId(
             String(response.videoId || response.embedUrl || "")
@@ -731,8 +737,14 @@ exports.getNextLive = async (req, res) => {
 
         if (hasLotteryAddress && lotteryScheduledAtIso) {
             response.lotteryScheduledAt = lotteryScheduledAtIso;
+            const lotteryScheduledMs = new Date(lotteryScheduledAtIso).getTime();
+            const isFutureLotterySchedule = Number.isFinite(lotteryScheduledMs) && lotteryScheduledMs > Date.now() && !lotteryCompleted;
 
-            if (response.status !== "live") {
+            if (isFutureLotterySchedule) {
+                response.status = normalizedResponseVideoId ? "upcoming" : "scheduled_only";
+                response.scheduledAt = lotteryScheduledAtIso;
+                response.source = `${response.source || "youtube"}_manual_gate`;
+            } else if (response.status !== "live") {
                 response.scheduledAt = lotteryScheduledAtIso;
                 if (response.status === "scheduled_only") {
                     response.source = "lottery_manual_schedule";

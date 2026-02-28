@@ -23,6 +23,11 @@ const getYoutubeConfig = () => ({
 
 const buildEmbedUrl = (videoId) => `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
 
+const buildCacheKey = (suffix = "") => {
+    const normalized = String(suffix || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
+    return normalized ? `${CACHE_KEY_NEXT_LIVE}_${normalized}` : CACHE_KEY_NEXT_LIVE;
+};
+
 const buildScheduledOnlyPayload = (reason = "fallback") => ({
     status: "scheduled_only",
     scheduledAt: getNextFridayAt11PmBogotaIso(),
@@ -136,7 +141,7 @@ const buildDetailsMap = (videoDetailsData) => {
     return map;
 };
 
-const resolvePreferredVideo = ({ candidates, detailsMap, eventType }) => {
+const resolvePreferredVideo = ({ candidates, detailsMap, eventType, notBefore = Number.NaN }) => {
     if (!Array.isArray(candidates) || candidates.length === 0) return null;
 
     const enriched = candidates.map((candidate, index) => {
@@ -158,12 +163,20 @@ const resolvePreferredVideo = ({ candidates, detailsMap, eventType }) => {
             scheduledAt,
             actualAt,
             sortTimestamp: toTimestamp(preferredTime),
+            filterTimestamp: toTimestamp(eventType === "live"
+                ? (actualAt || scheduledAt || publishedAt)
+                : (scheduledAt || actualAt || publishedAt)),
             originalIndex: index,
         };
     });
 
-    const withTime = enriched.filter((item) => Number.isFinite(item.sortTimestamp));
-    const sorted = (withTime.length > 0 ? withTime : enriched).sort((a, b) => {
+    const filtered = Number.isFinite(notBefore)
+        ? enriched.filter((item) => Number.isFinite(item.filterTimestamp) && item.filterTimestamp >= notBefore)
+        : enriched;
+
+    const source = filtered.length > 0 ? filtered : enriched;
+    const withTime = source.filter((item) => Number.isFinite(item.sortTimestamp));
+    const sorted = (withTime.length > 0 ? withTime : source).sort((a, b) => {
         const left = Number.isFinite(a.sortTimestamp) ? a.sortTimestamp : Number.MAX_SAFE_INTEGER;
         const right = Number.isFinite(b.sortTimestamp) ? b.sortTimestamp : Number.MAX_SAFE_INTEGER;
         if (left !== right) return left - right;
@@ -173,11 +186,13 @@ const resolvePreferredVideo = ({ candidates, detailsMap, eventType }) => {
     return sorted[0] || null;
 };
 
-const fetchYoutubeLivePayload = async () => {
+const fetchYoutubeLivePayload = async ({ preferredNotBefore } = {}) => {
     const { apiKey, channelId } = getYoutubeConfig();
     if (!apiKey || !channelId) {
         return buildScheduledOnlyPayload("youtube_no_configurado");
     }
+
+    const notBeforeTimestamp = toTimestamp(preferredNotBefore);
 
     const liveSearch = await fetchJson(buildYoutubeSearchUrl({
         apiKey,
@@ -198,6 +213,7 @@ const fetchYoutubeLivePayload = async () => {
             candidates: liveCandidates,
             detailsMap: buildDetailsMap(liveDetailsData),
             eventType: "live",
+            notBefore: notBeforeTimestamp,
         });
     }
 
@@ -217,6 +233,7 @@ const fetchYoutubeLivePayload = async () => {
                 candidates: upcomingCandidates,
                 detailsMap: buildDetailsMap(upcomingDetailsData),
                 eventType: "upcoming",
+                notBefore: notBeforeTimestamp,
             });
         }
         status = "upcoming";
@@ -251,9 +268,10 @@ const shouldRefreshCacheNow = (cachedPayload) => {
     return now >= (scheduledAt - 3 * 60 * 1000);
 };
 
-const getNextLiveWithCache = async ({ forceRefresh = false } = {}) => {
+const getNextLiveWithCache = async ({ forceRefresh = false, preferredNotBefore = "", cacheKeySuffix = "" } = {}) => {
     const now = new Date();
-    const cached = await LiveEventCache.findOne({ key: CACHE_KEY_NEXT_LIVE }).lean();
+    const cacheKey = buildCacheKey(cacheKeySuffix || preferredNotBefore || "");
+    const cached = await LiveEventCache.findOne({ key: cacheKey }).lean();
 
     if (!forceRefresh && cached && cached.expiresAt && new Date(cached.expiresAt) > now) {
         if (!shouldRefreshCacheNow(cached.payload)) {
@@ -267,7 +285,7 @@ const getNextLiveWithCache = async ({ forceRefresh = false } = {}) => {
 
     let payload;
     try {
-        payload = await fetchYoutubeLivePayload();
+        payload = await fetchYoutubeLivePayload({ preferredNotBefore });
     } catch (error) {
         payload = {
             ...buildScheduledOnlyPayload("youtube_error"),
@@ -278,9 +296,10 @@ const getNextLiveWithCache = async ({ forceRefresh = false } = {}) => {
     const expiresAt = new Date(now.getTime() + getCacheTtlMs());
 
     await LiveEventCache.findOneAndUpdate(
-        { key: CACHE_KEY_NEXT_LIVE },
+        { key: cacheKey },
         {
             $set: {
+                key: cacheKey,
                 payload,
                 expiresAt,
             },
