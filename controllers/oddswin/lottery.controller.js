@@ -700,16 +700,13 @@ exports.getNextLive = async (req, res) => {
             );
         }
 
-        if (hasLotteryAddress && lotteryManualVideoLocked && lotteryManualVideoId) {
+        if (hasLotteryAddress && lotteryCompleted && lotteryManualVideoLocked && lotteryManualVideoId) {
             const embedUrl = buildCanonicalYoutubeEmbedUrl(lotteryManualVideoId);
             const scheduledAt = lotteryScheduledAtIso || getNextFridayAt11PmBogotaIso();
-            const scheduledMs = new Date(scheduledAt).getTime();
-            const isFutureSchedule = Number.isFinite(scheduledMs) && scheduledMs > Date.now();
-            const manualStatus = lotteryCompleted ? "recorded" : (isFutureSchedule ? "upcoming" : "live");
 
             return res.status(200).json({
                 ok: true,
-                status: manualStatus,
+                status: "recorded",
                 scheduledAt,
                 timezone: DEFAULT_TIMEZONE,
                 source: "lottery_manual_video",
