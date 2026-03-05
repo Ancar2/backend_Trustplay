@@ -8,12 +8,15 @@ Responsabilidades principales:
 - Gestion de usuarios, wallets y referidos.
 - Dominio de juego Oddswin (loterias, cajas, recompensas, reconciliacion on-chain).
 - Versionado legal auditable (documentos, versiones, aceptaciones).
+- Enlaces compartidos de salas (preview OG para redes + redirect seguro).
 
 ## Requisitos
 
 - Node.js 20+
 - MongoDB accesible
-- Archivo `.env` configurado
+- Configuracion de entorno:
+  - local: `.env`
+  - produccion: AWS Secrets Manager (recomendado)
 
 ## Instalacion
 
@@ -32,6 +35,10 @@ npm run start    # modo normal
 Health check:
 
 - `GET /api/health`
+
+Ruta publica de compartidos:
+
+- `GET /share/:slug`
 
 ## Scripts utiles
 
@@ -63,6 +70,7 @@ Documento detallado: `api_Trustplay/ARCHITECTURE.md`.
 - Cookies de auth segun `NODE_ENV` + `AUTH_SAME_DOMAIN`.
 - Rate limiting global y de autenticacion.
 - Validacion de entorno en arranque (`config/env.js`).
+- Carga de secretos en bootstrap (`loadSecrets.js`) antes de inicializar modulos.
 
 Variables: `api_Trustplay/docs/ENV_VARIABLES.md`.
 
@@ -83,6 +91,13 @@ Evidencia registrada por aceptacion:
 Catalogo completo y actualizado:
 
 - `api_Trustplay/docs/API_ENDPOINTS.md`
+
+## Share links (meeting rooms)
+
+- Admin configura slugs en `trustplay_info.shareRooms`.
+- Crawlers sociales reciben metadata OG/Twitter para preview.
+- Usuarios reales reciben redirect `302` al `roomUrl`.
+- En produccion, `/share/*` debe enrutar al backend en ALB/Cloudflare/Nginx.
 
 ## Release recomendado
 

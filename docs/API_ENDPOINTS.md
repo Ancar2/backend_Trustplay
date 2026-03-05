@@ -6,11 +6,13 @@ Documento operativo de endpoints actuales.
 
 - Prefijo principal: `/api`
 - Prefijo adicional para Oddswin (compatibilidad por juego): `/api/games/oddswin`
+- Ruta publica especial de compartidos: `/share/:slug`
 
 Notas:
 
 - Las rutas de `oddswin.routes.js` y `config.routes.js` existen en ambos prefijos.
 - Rutas de `auth`, `users`, `legal`, `trustplay` y `oddswin/admin` solo viven en `/api`.
+- `/share/:slug` existe para que el crawler social pueda obtener metadata OG y el usuario final sea redirigido.
 
 ## 2) Convenciones de seguridad
 
@@ -108,6 +110,18 @@ Notas:
 |---|---|---|---|
 | GET | `/api/trustplay-info` | Publica | Informacion institucional (social + legal derivado). |
 | PUT | `/api/trustplay-info` | JWT + Admin | Actualiza contenido institucional permitido. |
+| GET | `/api/trustplay/share/:slug` | Publica | Abre enlace compartido: OG para crawler, redirect 302 para usuario. |
+| GET | `/share/:slug` | Publica | Alias publico para compartir en redes/mensajeria (misma logica OG + redirect). |
+| GET | `/api/trustplay-info/share-rooms` | JWT + Admin | Lista configuraciones de enlaces compartidos. |
+| POST | `/api/trustplay-info/share-rooms` | JWT + Admin | Crea configuracion de enlace compartido. |
+| PUT | `/api/trustplay-info/share-rooms/:id` | JWT + Admin | Edita configuracion de enlace compartido. |
+| DELETE | `/api/trustplay-info/share-rooms/:id` | JWT + Admin | Elimina configuracion de enlace compartido. |
+
+Notas operativas de compartidos:
+
+- Crawler social (WhatsApp/Telegram/Discord/Facebook/X, etc.) recibe HTML minimo con Open Graph/Twitter tags.
+- Usuario normal recibe `302` al `roomUrl` configurado por admin.
+- Para que esto funcione en produccion, `/share/*` debe enrutar al backend (no al index.html del SPA).
 
 ---
 

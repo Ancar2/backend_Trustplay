@@ -1,19 +1,20 @@
 # Arquitectura de `api_Trustplay`
 
-Este documento define la arquitectura tecnica del backend, que debe ir en cada carpeta y como escalar a nuevos juegos sin romper la plataforma.
+Documento tecnico del backend para mantener consistencia de capas, seguridad y despliegue.
 
-## 1) Principios de arquitectura
+## 1) Principios
 
 - Separacion por capas: `routes -> middleware -> controllers -> services/models`.
-- Fuente de verdad: MongoDB para estado de negocio, blockchain para verificacion on-chain.
-- Seguridad por defecto: validacion de request, JWT, RBAC, CORS, rate limit y cookies seguras.
-- Escalabilidad por dominio: lo global va fuera de juegos; cada juego vive en su propio modulo.
+- MongoDB es la fuente de verdad de negocio; blockchain se usa para verificacion y sincronizacion.
+- Seguridad por defecto: validacion de requests, JWT, RBAC, CORS por allowlist, rate limit y cookies seguras.
+- Escalabilidad por dominio: lo global en modulos globales; cada juego en su propio modulo.
 
 ## 2) Arbol de carpetas (resumen real)
 
 ```text
 api_Trustplay/
 ├─ index.js
+├─ loadSecrets.js
 ├─ package.json
 ├─ README.md
 ├─ ARCHITECTURE.md
@@ -93,106 +94,119 @@ api_Trustplay/
    └─ ENV_VARIABLES.md
 ```
 
-## 3) Que va en cada capa
+## 3) Bootstrap de arranque
+
+El arranque de `index.js` sigue esta secuencia:
+
+1. `loadSecrets()` carga configuracion desde `.env` (local) y/o AWS Secrets Manager (produccion).
+2. Se importan modulos que dependen de `process.env`.
+3. Se construye Express (`helmet`, `cookie-parser`, CORS dinamico, rate limit, rutas).
+4. `validateEnv()` valida variables obligatorias.
+5. Conexion a MongoDB.
+6. `seedLegalDocuments()` para garantizar base legal inicial.
+7. `startOddswinReconcileScheduler()` si esta habilitado por entorno.
+8. `app.listen(PORT)`.
+
+Si cualquier paso critico falla, el proceso termina con exit code 1.
+
+## 4) Que vive en cada capa
+
+### `loadSecrets.js`
+
+- Unica responsabilidad: cargar configuracion de entorno.
+- Soporta desarrollo local (`.env`) y produccion con AWS Secrets Manager.
+- Sin logica de negocio.
 
 ### `config/`
 
-Solo bootstrap tecnico.
-
-- `db.js`: conexion y manejo basico de MongoDB.
-- `env.js`: validaciones de configuracion obligatoria y reglas de produccion.
-
-No va logica de negocio aqui.
+- `db.js`: conexion a MongoDB.
+- `env.js`: validaciones de entorno.
 
 ### `routes/`
 
-Define contratos HTTP y aplica middleware.
-
-- No consulta DB directamente.
+- Define contratos HTTP y middleware por endpoint.
+- No consulta DB directo.
 - No contiene reglas complejas de negocio.
-- Agrupa endpoints por dominio (`auth`, `users`, `legal`, `oddswin`).
 
 ### `middleware/`
 
-Reglas transversales de seguridad y saneamiento.
-
 - `jwt.js`: autenticacion y rol admin.
-- `authorize.js`: ownership y permisos por recurso/wallet.
-- `requestValidation.js`: validacion por endpoint.
+- `authorize.js`: ownership/permisos por recurso.
+- `requestValidation.js`: validacion de payload y params.
 
 ### `controllers/`
 
-Orquestacion HTTP.
-
-- Lee `req`, valida flujo, llama servicios/modelos, responde `res`.
-- Debe permanecer delgado; si crece, mover logica a `services/`.
+- Orquestacion request/response.
+- Llaman servicios/modelos y devuelven HTTP status + body.
+- Mantener delgados; mover logica reusable a `services`.
 
 ### `services/`
 
-Logica reutilizable de dominio e integraciones externas.
-
-- On-chain, reconciliacion, sincronizacion, versionado legal.
-- Sin acoplarse a detalles de transporte HTTP.
+- Integraciones externas y reglas de negocio reutilizables.
+- Ejemplos: legal versioning, reconciliacion on-chain, sync NFT, YouTube live.
 
 ### `models/`
 
-Persistencia y esquemas de datos.
-
-- Un modelo por agregado principal.
-- Indices, defaults y restricciones de datos.
+- Esquemas e indices MongoDB.
+- Un agregado principal por modelo.
 
 ### `utils/`
 
-Ayudantes de soporte (plantillas email, envio correo, etc.).
-
-No se usa para estado de negocio central.
+- Soporte transversal (email, templates).
 
 ### `scripts/`
 
-Operaciones de mantenimiento y auditoria.
-
-- Seeding legal, limpieza legacy, baseline de seguridad, auditoria de dependencias.
+- Tareas operativas (seed, cleanup, auditorias).
 
 ### `tests/`
 
-Tests de regresion y contrato basico de validaciones/config.
+- Pruebas de validacion minima de entorno y request contract.
 
-## 4) Flujos base
+## 5) Flujos clave
 
-### Flujo de request
+### Flujo request general
 
 ```text
-Client
-  -> route
-  -> middleware(s)
-  -> controller
-  -> service/model
-  -> response
+Client -> route -> middleware(s) -> controller -> service/model -> response
 ```
 
 ### Flujo legal versionado
 
 ```text
-Admin crea version
-  -> publica version
-  -> usuarios consultan version vigente
-  -> usuario acepta
-  -> se guarda evidencia (version, sha256, ip, userAgent)
+Admin crea version -> publica version -> usuario consulta documento vigente
+-> usuario acepta -> se registra evidencia (versionId, sha256, ip, userAgent, acceptedAt)
 ```
 
-## 5) Reglas de organizacion obligatorias
+### Flujo share room
 
-1. Todo lo de Oddswin vive en `controllers/oddswin`, `routes/modules/oddswin`, `models/oddswin`, `services/oddswin`.
-2. Lo global (auth, users, legal, trustplay) no se mezcla con carpetas de juego.
-3. Cada endpoint de escritura debe tener validacion en `requestValidation.js`.
-4. Endpoints sensibles deben pasar por JWT + autorizacion segun aplique.
-5. No agregar secretos al repositorio (`.env` nunca se versiona).
+```text
+Admin crea configuracion de sala (slug/titulo/descripcion/imagen/url)
+-> usuario/crawler abre /share/:slug o /api/trustplay/share/:slug
+-> crawler recibe HTML con OG tags (preview)
+-> usuario real recibe redirect 302 al enlace de sala
+```
 
-## 6) Como agregar un nuevo juego (plantilla)
+## 6) Reglas obligatorias de organizacion
+
+1. Todo Oddswin vive en `controllers/oddswin`, `routes/modules/oddswin`, `models/oddswin`, `services/oddswin`.
+2. Dominios globales (`auth`, `users`, `trustplay`, `legal`) no se mezclan con carpetas de juego.
+3. Toda ruta de escritura debe tener validacion en `requestValidation.js`.
+4. Endpoints sensibles deben pasar por JWT + autorizacion segun corresponda.
+5. No versionar secretos en git.
+
+## 7) Guia de despliegue para share links
+
+Para previews correctos en WhatsApp/Telegram/Discord:
+
+- El request del crawler a `/share/:slug` debe llegar al backend (no al SPA statico).
+- Si front y back usan dominios distintos, el edge/proxy (ALB, CloudFront, Cloudflare, Nginx) debe enrutar `/share/*` hacia `api_Trustplay`.
+- El backend ya responde OG tags para crawler y redirect inmediato para usuarios normales.
+
+## 8) Como agregar un nuevo juego
 
 Para un juego nuevo `jackpot`:
 
-1. Crear:
+1. Crear carpetas:
    - `controllers/jackpot/`
    - `models/jackpot/`
    - `routes/modules/jackpot/`
@@ -200,19 +214,17 @@ Para un juego nuevo `jackpot`:
 2. Registrar rutas en `routes/api.router.js` bajo `/api/games/jackpot/*`.
 3. Reusar middleware global (`jwt`, `authorize`, `requestValidation`).
 4. Documentar endpoints en `docs/API_ENDPOINTS.md`.
-5. Agregar tests de validacion para endpoints nuevos.
+5. Agregar pruebas minimas de regresion.
 
-## 7) Validacion y release
-
-Antes de release:
+## 9) Validacion antes de release
 
 - `npm run verify:ci`
 - `npm run security:baseline`
 - `npm run audit:deps`
-- Opcional combinado: `npm run verify:full`
+- `npm run verify:full` (recomendado)
 
 Referencias:
 
 - Endpoints: `api_Trustplay/docs/API_ENDPOINTS.md`
 - Variables de entorno: `api_Trustplay/docs/ENV_VARIABLES.md`
-- Checklist release: `docs/PRODUCTION_RELEASE_CHECKLIST.md`
+- Checklist de salida: `docs/PRODUCTION_RELEASE_CHECKLIST.md`

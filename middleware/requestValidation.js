@@ -375,6 +375,52 @@ const validateTrustplayUpdateBody = (req) => {
     return errors;
 };
 
+const validateTrustplayShareRoomBody = (req) => {
+    const errors = [];
+    const { slug, title, description, imageUrl, roomUrl, platform, active, order } = req.body || {};
+
+    if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
+    if (!isNonEmptyString(slug)) errors.push("slug es requerido.");
+    if (!isNonEmptyString(title)) errors.push("title es requerido.");
+    if (!isNonEmptyString(description)) errors.push("description es requerido.");
+    if (!isNonEmptyString(roomUrl)) errors.push("roomUrl es requerido.");
+
+    const normalizedSlug = typeof slug === "string" ? slug.trim().toLowerCase() : "";
+    if (normalizedSlug && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalizedSlug)) {
+        errors.push("slug debe tener formato slug (ej: sala-oddswin).");
+    }
+
+    const isHttpUrl = (value) => {
+        try {
+            const parsed = new URL(String(value || "").trim());
+            return parsed.protocol === "http:" || parsed.protocol === "https:";
+        } catch (_) {
+            return false;
+        }
+    };
+
+    if (imageUrl !== undefined && imageUrl !== null && String(imageUrl).trim() !== "" && !isHttpUrl(imageUrl)) {
+        errors.push("imageUrl debe ser una URL valida.");
+    }
+    if (isNonEmptyString(roomUrl) && !isHttpUrl(roomUrl)) {
+        errors.push("roomUrl debe ser una URL valida.");
+    }
+
+    if (platform !== undefined && !["meet", "zoom", "other"].includes(String(platform || "").trim().toLowerCase())) {
+        errors.push("platform debe ser meet, zoom u other.");
+    }
+
+    if (active !== undefined && typeof active !== "boolean") {
+        errors.push("active debe ser boolean.");
+    }
+
+    if (order !== undefined && !isIntegerLike(order)) {
+        errors.push("order debe ser entero.");
+    }
+
+    return errors;
+};
+
 const validateLegalAcceptBody = (req) => {
     const errors = [];
     const { documentKey, versionId, source } = req.body || {};
@@ -562,6 +608,7 @@ module.exports = {
         claimRecordBody: validateClaimRecordBody,
         configUpdateBody: validateConfigUpdateBody,
         trustplayUpdateBody: validateTrustplayUpdateBody,
+        trustplayShareRoomBody: validateTrustplayShareRoomBody,
         legalAcceptBody: validateLegalAcceptBody,
         legalCreateVersionBody: validateLegalCreateVersionBody,
         reconcileBody: validateReconcileBody,

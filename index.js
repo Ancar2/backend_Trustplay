@@ -66,7 +66,7 @@ const parseAllowedOrigins = () => {
 };
 
 // Crea y configura la instancia de Express con todos los middlewares y rutas.
-const buildApp = ({ apiRouter, isProductionEnv, allowedOrigins, sameDomainDeployment }) => {
+const buildApp = ({ apiRouter, trustplayInfoController, isProductionEnv, allowedOrigins, sameDomainDeployment }) => {
     const app = express();
 
     // Oculta el header x-powered-by para no exponer tecnología innecesariamente.
@@ -130,6 +130,9 @@ const buildApp = ({ apiRouter, isProductionEnv, allowedOrigins, sameDomainDeploy
     app.use(cors(corsOptionsDelegate));
     app.use(express.json({ limit: "1mb" }));
 
+    // Ruta publica para compartir salas (ALB puede enrutar /share/* directo al backend).
+    app.get("/share/:slug", trustplayInfoController.openShareRoomPage);
+
     // Todas las rutas de negocio se montan bajo /api.
     app.use("/api", apiRouter);
 
@@ -166,6 +169,7 @@ const startServer = async () => {
     // Estos módulos se importan después de cargar secretos porque consumen process.env al inicializar.
     const connectionDB = require("./config/db");
     const apiRouter = require("./routes/api.router");
+    const trustplayInfoController = require("./controllers/trustplay/trustplayInfo.controller");
     const { validateEnv } = require("./config/env");
     const { startOddswinReconcileScheduler } = require("./services/oddswin/reconcile.service");
     const { seedLegalDocuments } = require("./services/legal/legal.service");
@@ -178,6 +182,7 @@ const startServer = async () => {
     // Construye la app ya configurada con middlewares y rutas.
     const app = buildApp({
         apiRouter,
+        trustplayInfoController,
         isProductionEnv,
         allowedOrigins,
         sameDomainDeployment,
