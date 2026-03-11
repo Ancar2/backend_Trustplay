@@ -65,18 +65,29 @@ const parseAllowedOrigins = () => {
     return [...new Set(configured)];
 };
 
+const PUBLIC_PATH_EXACT_MATCHES = Object.freeze([
+    "/api/health",
+]);
+
+const PUBLIC_PATH_PREFIX_MATCHES = Object.freeze([
+    "/share/",
+    "/api/auth/callback",
+    "/api/games/oddswin/exclusive-nft/metadata/",
+    "/api/games/oddswin/founding-circle/metadata/",
+    "/api/exclusive-nft/metadata/",
+    "/api/founding-circle/metadata/",
+]);
+
+const doesPathMatchPublicAllowlist = (path) => {
+    if (!path) return false;
+    if (PUBLIC_PATH_EXACT_MATCHES.includes(path)) return true;
+    return PUBLIC_PATH_PREFIX_MATCHES.some((prefix) => path.startsWith(prefix));
+};
+
 // Excepciones puntuales para solicitudes sin Origin (navegador/crawler/health checks).
 const isNoOriginPathAllowed = (req) => {
     const path = String(req.path || req.originalUrl || "").split("?")[0];
-    if (!path) return false;
-
-    if (path === "/api/health") return true;
-    if (path.startsWith("/share/")) return true;
-
-    // Callback OAuth opcional (si se habilita flujo server-side en el futuro).
-    if (path.startsWith("/api/auth/callback")) return true;
-
-    return false;
+    return doesPathMatchPublicAllowlist(path);
 };
 
 const getRequestPath = (req) => String(req.path || req.originalUrl || "").split("?")[0];
@@ -84,10 +95,7 @@ const getRequestPath = (req) => String(req.path || req.originalUrl || "").split(
 // Excepciones para validación de header secreto inyectado por Cloudflare.
 const isEdgeGuardBypassPath = (req) => {
     const path = getRequestPath(req);
-    if (!path) return false;
-    if (path === "/api/health") return true;
-    if (path.startsWith("/share/")) return true;
-    return false;
+    return doesPathMatchPublicAllowlist(path);
 };
 
 const resolveEdgeGuardConfig = ({ isProductionEnv }) => {
@@ -211,7 +219,7 @@ const buildApp = ({ apiRouter, trustplayInfoController, isProductionEnv, allowed
     app.use((err, req, res, next) => {
         // Si el rechazo vino de CORS, se devuelve 403 en lugar de 500.
         if (err && err.message === "Not allowed by CORS") {
-            return res.status(403).json({ msj: "Origen no permitido por CORS" });
+            return res.status(403).json({title:"Forbidden", detail:"You are not allowed to access this resource.", status :403});
         }
 
         // Cualquier otro error no controlado se registra y responde como error interno.
