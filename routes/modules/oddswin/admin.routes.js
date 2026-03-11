@@ -64,4 +64,12 @@ router.post(
     reconcileController.stopReconcile
 );
 
+router.post(
+    "/oddswin/reconcile/status-claims",
+    authMiddleware.verifyToken,
+    authMiddleware.isAdmin,
+    validateRequest(validators.reconcileStatusClaimsBody),
+    reconcileController.runStatusClaimsReconcile
+);
+
 module.exports = router;

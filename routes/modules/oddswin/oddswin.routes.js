@@ -4,6 +4,7 @@ const boxController = require("../../../controllers/oddswin/box.controller");
 const playerController = require("../../../controllers/oddswin/player.controller");
 const sponsorController = require("../../../controllers/oddswin/sponsor.controller");
 const exclusiveNftController = require("../../../controllers/oddswin/exclusiveNft.controller");
+const foundingCircleController = require("../../../controllers/oddswin/foundingCircle.controller");
 const authMiddleware = require("../../../middleware/jwt");
 const {
     requireSelfOrAdmin,
@@ -88,6 +89,19 @@ router.post(
     validateRequest(validators.claimRecordBody),
     requireBodyWalletOwnership("owner"),
     exclusiveNftController.recordClaim
+);
+
+// --- Founding Circle NFT ---
+router.get("/founding-circle/metadata/:tokenId", foundingCircleController.getMetadata);
+router.get("/founding-circle/info", foundingCircleController.getGlobalInfo);
+router.get("/founding-circle/user/:address", foundingCircleController.getUserInfo);
+router.get("/founding-circle/holders", authMiddleware.verifyToken, foundingCircleController.getHolders);
+router.post(
+    "/founding-circle/claim-record",
+    authMiddleware.verifyToken,
+    validateRequest(validators.claimRecordBody),
+    requireBodyWalletOwnership("owner"),
+    foundingCircleController.recordClaim
 );
 
 // --- Maintenance ---

@@ -26,8 +26,24 @@ const ABI_EXCLUSIVE_NFT = [
     "function tokenURI(uint256 tokenId) view returns (string)"
 ];
 
+const ABI_FOUNDING_CIRCLE = [
+    "function activeSupply() view returns (uint256)",
+    "function maxSlots() view returns (uint256)",
+    "function nftPrice() view returns (uint256)",
+    "function boxThreshold() view returns (uint256)",
+    "function balanceOf(address owner) view returns (uint256)",
+    "function getTimeRemaining(uint256 tokenId) view returns (uint256)",
+    "function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)",
+    "function getPendingReward(uint256 tokenId) view returns (uint256)",
+    "function getLastClaimTimestamp(uint256 tokenId) view returns (uint256)",
+    "function totalSupply() view returns (uint256)",
+    "function ownerOf(uint256 tokenId) view returns (address)",
+    "function tokenURI(uint256 tokenId) view returns (string)"
+];
+
 const ABI_FACTORY = [
     "function getExclusiveNFT() view returns (address)",
+    "function getFoundingCircle() view returns (address)",
     "function getAllLotteries(uint256 year) view returns (address[])"
 ];
 
@@ -41,12 +57,13 @@ const normalizeAddress = (value) => {
 
 const readContractsFromDb = async () => {
     const config = await GlobalConfig.findOne()
-        .select("factory exclusiveNFT sponsors middleware usdt owner")
+        .select("factory exclusiveNFT foundingCircle sponsors middleware usdt owner")
         .lean();
 
     return {
         FACTORY: normalizeAddress(config?.factory || ""),
         EXCLUSIVE_NFT: normalizeAddress(config?.exclusiveNFT || ""),
+        FOUNDING_CIRCLE: normalizeAddress(config?.foundingCircle || ""),
         SPONSORS: normalizeAddress(config?.sponsors || ""),
         MIDDLEWARE: normalizeAddress(config?.middleware || ""),
         USDT: normalizeAddress(config?.usdt || ""),
@@ -86,11 +103,18 @@ const getFactoryContract = async () => {
     return new ethers.Contract(address, ABI_FACTORY, provider);
 };
 
+const getFoundingCircleContract = async () => {
+    const contracts = await getContractsConfig();
+    const address = getRequiredAddress(contracts, "FOUNDING_CIRCLE");
+    return new ethers.Contract(address, ABI_FOUNDING_CIRCLE, provider);
+};
+
 const getProvider = () => provider;
 
 module.exports = {
     getProvider,
     getContractsConfig,
     getExclusiveNftContract,
+    getFoundingCircleContract,
     getFactoryContract
 };

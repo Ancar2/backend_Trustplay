@@ -5,16 +5,18 @@ const { ethers } = require("ethers");
 const Box = require("../models/oddswin/box.model");
 const Lottery = require("../models/oddswin/lottery.model");
 const ExclusiveNFT = require("../models/oddswin/exclusiveNFT.model");
+const FoundingCircle = require("../models/oddswin/foundingCircle.model");
 const LegalAcceptance = require("../models/legal/legalAcceptance.model");
 const sendEmail = require("../utils/sendEmail");
 const { buildPasswordResetEmail } = require("../utils/emailTemplates");
-const { getProvider } = require("../services/blockchain.service");
+const { getProvider, getContractsConfig } = require("../services/blockchain.service");
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const LOTTERY_INFO_ABI = [
     "function infoLottery() view returns (tuple(address stableCoin, uint128 boxPrice, uint128 boxesSold, uint128 totalBoxes, uint128 winningNumber))"
 ];
 const ERC20_DECIMALS_ABI = ["function decimals() view returns (uint8)"];
+const ERC721_BALANCE_OF_ABI = ["function balanceOf(address owner) view returns (uint256)"];
 const PHONE_COUNTRY_CODE_REGEX = /^\+[1-9]\d{0,3}$/;
 const PHONE_NATIONAL_REGEX = /^\d{6,15}$/;
 
@@ -67,6 +69,72 @@ const getWalletsSponsoredBy = (user, sponsorWallet) => {
 const uniqueWallets = (wallets) => (
     [...new Set((wallets || []).map((wallet) => toWallet(wallet)).filter(Boolean))]
 );
+
+const resolveStatusChipByWallet = async (wallets = []) => {
+    const normalizedWallets = uniqueWallets(wallets);
+    const statusMap = new Map();
+
+    normalizedWallets.forEach((wallet) => {
+        statusMap.set(wallet, {
+            statusChip: null,
+            hasPrimeStatus: false,
+            hasFoundingStatus: false
+        });
+    });
+
+    if (normalizedWallets.length === 0) {
+        return statusMap;
+    }
+
+    let contractsConfig = null;
+    try {
+        contractsConfig = await getContractsConfig();
+    } catch {
+        return statusMap;
+    }
+
+    const provider = getProvider();
+    const exclusiveAddress = toWallet(contractsConfig?.EXCLUSIVE_NFT || "");
+    const foundingAddress = toWallet(contractsConfig?.FOUNDING_CIRCLE || "");
+
+    const exclusiveContract = exclusiveAddress
+        ? new ethers.Contract(exclusiveAddress, ERC721_BALANCE_OF_ABI, provider)
+        : null;
+    const foundingContract = foundingAddress
+        ? new ethers.Contract(foundingAddress, ERC721_BALANCE_OF_ABI, provider)
+        : null;
+
+    await Promise.all(normalizedWallets.map(async (wallet) => {
+        let hasPrimeStatus = false;
+        let hasFoundingStatus = false;
+
+        if (exclusiveContract) {
+            try {
+                const balance = await exclusiveContract.balanceOf(wallet);
+                hasPrimeStatus = balance > 0n;
+            } catch {
+                hasPrimeStatus = false;
+            }
+        }
+
+        if (foundingContract) {
+            try {
+                const balance = await foundingContract.balanceOf(wallet);
+                hasFoundingStatus = balance > 0n;
+            } catch {
+                hasFoundingStatus = false;
+            }
+        }
+
+        statusMap.set(wallet, {
+            statusChip: hasPrimeStatus ? "prime" : (hasFoundingStatus ? "founding" : null),
+            hasPrimeStatus,
+            hasFoundingStatus
+        });
+    }));
+
+    return statusMap;
+};
 
 const readTokenDecimalsSafe = async (provider, tokenAddress) => {
     const normalizedToken = toWallet(tokenAddress);
@@ -420,6 +488,9 @@ const roundCurrency = (value) => {
     return Number(Number(value).toFixed(8));
 };
 
+const EXCLUSIVE_STATUS_SLOTS = 5;
+const FOUNDING_STATUS_SLOTS = 50;
+
 const getWalletTotalRegaliasFromCollection = async (wallet) => {
     const normalizedWallet = toWallet(wallet);
     if (!normalizedWallet) return 0;
@@ -437,11 +508,45 @@ const getWalletTotalRegaliasFromCollection = async (wallet) => {
     return Number(result?.[0]?.total || 0);
 };
 
+const getWalletTotalRegaliasFromFoundingCollection = async (wallet) => {
+    const normalizedWallet = toWallet(wallet);
+    if (!normalizedWallet) return 0;
+
+    const result = await FoundingCircle.aggregate([
+        { $match: { owner: normalizedWallet } },
+        {
+            $group: {
+                _id: null,
+                total: { $sum: { $ifNull: ["$totalRegalias", 0] } }
+            }
+        }
+    ]);
+
+    return Number(result?.[0]?.total || 0);
+};
+
 const getWalletsTotalRegaliasFromCollection = async (wallets) => {
     const normalizedWallets = uniqueWallets(wallets);
     if (normalizedWallets.length === 0) return 0;
 
     const result = await ExclusiveNFT.aggregate([
+        { $match: { owner: { $in: normalizedWallets } } },
+        {
+            $group: {
+                _id: null,
+                total: { $sum: { $ifNull: ["$totalRegalias", 0] } }
+            }
+        }
+    ]);
+
+    return Number(result?.[0]?.total || 0);
+};
+
+const getWalletsTotalRegaliasFromFoundingCollection = async (wallets) => {
+    const normalizedWallets = uniqueWallets(wallets);
+    if (normalizedWallets.length === 0) return 0;
+
+    const result = await FoundingCircle.aggregate([
         { $match: { owner: { $in: normalizedWallets } } },
         {
             $group: {
@@ -800,7 +905,10 @@ exports.getSponsorByWallet = async (req, res) => {
             return res.json({
                 sponsorWallet: '',
                 sponsorName: 'Sin Patrocinador',
-                sponsorPhoto: null
+                sponsorPhoto: null,
+                statusChip: null,
+                hasPrimeStatus: false,
+                hasFoundingStatus: false
             });
         }
 
@@ -812,7 +920,10 @@ exports.getSponsorByWallet = async (req, res) => {
                 sponsorWallet: sponsorWallet,
                 sponsorName: 'Desconocido',
                 sponsorPhoto: null,
-                isActive: false
+                isActive: false,
+                statusChip: null,
+                hasPrimeStatus: false,
+                hasFoundingStatus: false
             });
         }
 
@@ -828,11 +939,21 @@ exports.getSponsorByWallet = async (req, res) => {
             isActive = boxCount > 0;
         }
 
+        const sponsorStatusMap = await resolveStatusChipByWallet([sponsorWallet]);
+        const sponsorStatus = sponsorStatusMap.get(sponsorWallet) || {
+            statusChip: null,
+            hasPrimeStatus: false,
+            hasFoundingStatus: false
+        };
+
         res.json({
             sponsorWallet: sponsorWallet,
             sponsorName: sponsorUser.username || 'Desconocido',
             sponsorPhoto: sponsorUser.photo,
-            isActive: isActive
+            isActive: isActive,
+            statusChip: sponsorStatus.statusChip,
+            hasPrimeStatus: sponsorStatus.hasPrimeStatus,
+            hasFoundingStatus: sponsorStatus.hasFoundingStatus
         });
 
     } catch (error) {
@@ -1119,6 +1240,17 @@ exports.getDirectReferrals = async (req, res) => {
             ref.activeDirectCount = activeInLottery;
         }));
 
+        const directStatusMap = await resolveStatusChipByWallet(
+            paginatedReferrals.map((ref) => ref.wallet)
+        );
+
+        paginatedReferrals.forEach((ref) => {
+            const status = directStatusMap.get(toWallet(ref.wallet));
+            ref.statusChip = status?.statusChip || null;
+            ref.hasPrimeStatus = !!status?.hasPrimeStatus;
+            ref.hasFoundingStatus = !!status?.hasFoundingStatus;
+        });
+
         res.json({
             referrals: paginatedReferrals,
             pagination: {
@@ -1324,6 +1456,17 @@ exports.getIndirectReferrals = async (req, res) => {
             ref.activeDirectCount = activeInLottery;
         }));
 
+        const indirectStatusMap = await resolveStatusChipByWallet(
+            paginatedReferrals.map((ref) => ref.wallet)
+        );
+
+        paginatedReferrals.forEach((ref) => {
+            const status = indirectStatusMap.get(toWallet(ref.wallet));
+            ref.statusChip = status?.statusChip || null;
+            ref.hasPrimeStatus = !!status?.hasPrimeStatus;
+            ref.hasFoundingStatus = !!status?.hasFoundingStatus;
+        });
+
         res.json({
             referrals: paginatedReferrals,
             pagination: {
@@ -1418,9 +1561,18 @@ exports.getTotalEarnings = async (req, res) => {
         let totalNftRoyaltiesSpecific = 0;
 
         try {
-            totalNftRoyaltiesGlobal = await getWalletsTotalRegaliasFromCollection(userWallets);
+            const [exclusiveGlobal, foundingGlobal] = await Promise.all([
+                getWalletsTotalRegaliasFromCollection(userWallets),
+                getWalletsTotalRegaliasFromFoundingCollection(userWallets)
+            ]);
+            totalNftRoyaltiesGlobal = Number(exclusiveGlobal || 0) + Number(foundingGlobal || 0);
+
             if (targetWallet) {
-                totalNftRoyaltiesSpecific = await getWalletTotalRegaliasFromCollection(targetWallet);
+                const [exclusiveSpecific, foundingSpecific] = await Promise.all([
+                    getWalletTotalRegaliasFromCollection(targetWallet),
+                    getWalletTotalRegaliasFromFoundingCollection(targetWallet)
+                ]);
+                totalNftRoyaltiesSpecific = Number(exclusiveSpecific || 0) + Number(foundingSpecific || 0);
             }
         } catch (err) {
             console.error("Error calculating NFT Royalties:", err);
@@ -1483,6 +1635,8 @@ exports.getEarningsBreakdownByLottery = async (req, res) => {
                     lostTeamGain: 0,
                     lastLostAt: null,
                     teamGain: 0,
+                    primeStatusGain: 0,
+                    foundingStatusGain: 0,
                     nftExclusiveGain: 0,
                     prizeGain: 0,
                     prizeRoles: [],
@@ -1610,60 +1764,112 @@ exports.getEarningsBreakdownByLottery = async (req, res) => {
         });
 
         // ---------------------------------------------------------------------
-        // 3) Ganancia NFT exclusivo (usa totalRegalias real y la reparte por evento)
+        // 3) Ganancia por status NFT (Prime + Founding; separadas por rol y visibles por evento)
         // ---------------------------------------------------------------------
         try {
-            const totalRegaliasWallet = await getWalletTotalRegaliasFromCollection(targetWallet);
+            const [exclusiveRegalias, foundingRegalias] = await Promise.all([
+                getWalletTotalRegaliasFromCollection(targetWallet),
+                getWalletTotalRegaliasFromFoundingCollection(targetWallet)
+            ]);
 
-            if (totalRegaliasWallet > 0) {
+            const totalPrimeRegaliasWallet = Number(exclusiveRegalias || 0);
+            const totalFoundingRegaliasWallet = Number(foundingRegalias || 0);
+
+            if (totalPrimeRegaliasWallet > 0 || totalFoundingRegaliasWallet > 0) {
                 const completedLotteries = await Lottery.find({
                     completed: true,
-                    percentageExclusiveNft: { $gt: 0 }
-                }).select("address name symbol year index totalBoxes boxPrice percentageExclusiveNft");
+                    $or: [
+                        { percentageExclusiveNft: { $gt: 0 } },
+                        { percentageFoundingCircle: { $gt: 0 } }
+                    ]
+                }).select("address name symbol year index totalBoxes boxPrice percentageExclusiveNft percentageFoundingCircle exclusiveNftRewardPool foundingCircleRewardPool");
 
-                const weights = [];
-                let totalWeight = 0;
+                const primeWeights = [];
+                let totalPrimeWeight = 0;
+                const foundingWeights = [];
+                let totalFoundingWeight = 0;
 
                 completedLotteries.forEach((lottery) => {
                     const lotteryAddress = toWallet(lottery.address);
                     if (!lotteryAddress) return;
 
-                    // Peso relativo del evento para repartir totalRegalias acumuladas.
                     const totalPool = Number(lottery.totalBoxes || 0) * Number(lottery.boxPrice || 0);
-                    const halfPool = totalPool / 2;
-                    const nftPool = halfPool * (Number(lottery.percentageExclusiveNft || 0) / 10000);
-                    const weight = Number.isFinite(nftPool) && nftPool > 0 ? nftPool : 0;
+                    const derivedExclusivePool = totalPool * (Number(lottery.percentageExclusiveNft || 0) / 10000);
+                    const derivedFoundingPool = totalPool * (Number(lottery.percentageFoundingCircle || 0) / 10000);
 
-                    if (weight > 0) {
-                        weights.push({ lotteryAddress, weight, lottery });
-                        totalWeight += weight;
+                    const exclusivePool = Number(lottery.exclusiveNftRewardPool || 0) > 0
+                        ? Number(lottery.exclusiveNftRewardPool || 0)
+                        : derivedExclusivePool;
+                    const foundingPool = Number(lottery.foundingCircleRewardPool || 0) > 0
+                        ? Number(lottery.foundingCircleRewardPool || 0)
+                        : derivedFoundingPool;
+
+                    const exclusivePerHolder = exclusivePool > 0 ? (exclusivePool / EXCLUSIVE_STATUS_SLOTS) : 0;
+                    const foundingPerHolder = foundingPool > 0 ? (foundingPool / FOUNDING_STATUS_SLOTS) : 0;
+                    const primeWeight = Number.isFinite(exclusivePerHolder) && exclusivePerHolder > 0
+                        ? exclusivePerHolder
+                        : 0;
+                    const foundingWeight = Number.isFinite(foundingPerHolder) && foundingPerHolder > 0
+                        ? foundingPerHolder
+                        : 0;
+
+                    if (primeWeight > 0) {
+                        primeWeights.push({ lotteryAddress, weight: primeWeight, lottery });
+                        totalPrimeWeight += primeWeight;
+                    }
+
+                    if (foundingWeight > 0) {
+                        foundingWeights.push({ lotteryAddress, weight: foundingWeight, lottery });
+                        totalFoundingWeight += foundingWeight;
                     }
                 });
 
-                if (weights.length > 0 && totalWeight > 0) {
-                    weights.forEach(({ lotteryAddress, weight, lottery }) => {
+                if (totalPrimeRegaliasWallet > 0 && primeWeights.length > 0 && totalPrimeWeight > 0) {
+                    primeWeights.forEach(({ lotteryAddress, weight, lottery }) => {
                         const row = ensureRow(lotteryAddress, lottery);
                         if (!row) return;
-                        row.nftExclusiveGain += (totalRegaliasWallet * weight) / totalWeight;
+                        row.primeStatusGain += (totalPrimeRegaliasWallet * weight) / totalPrimeWeight;
                     });
-                } else {
-                    // Fallback: si no hay forma de mapear por evento, se muestra como acumulado NFT.
+                } else if (totalPrimeRegaliasWallet > 0) {
+                    // Fallback Prime: no hay forma de mapear por evento.
                     const syntheticRow = ensureRow(
-                        `nft-acumulado-${targetWallet}`,
+                        `status-prime-acumulado-${targetWallet}`,
                         {
-                            name: "Regalías NFT acumuladas",
-                            symbol: "NFT",
+                            name: "Regalias Prime acumuladas",
+                            symbol: "PRIME",
                             year: null,
                             index: null
                         }
                     );
                     if (syntheticRow) {
-                        syntheticRow.nftExclusiveGain += totalRegaliasWallet;
+                        syntheticRow.primeStatusGain += totalPrimeRegaliasWallet;
+                    }
+                }
+
+                if (totalFoundingRegaliasWallet > 0 && foundingWeights.length > 0 && totalFoundingWeight > 0) {
+                    foundingWeights.forEach(({ lotteryAddress, weight, lottery }) => {
+                        const row = ensureRow(lotteryAddress, lottery);
+                        if (!row) return;
+                        row.foundingStatusGain += (totalFoundingRegaliasWallet * weight) / totalFoundingWeight;
+                    });
+                } else if (totalFoundingRegaliasWallet > 0) {
+                    // Fallback Founding: no hay forma de mapear por evento.
+                    const syntheticRow = ensureRow(
+                        `status-founding-acumulado-${targetWallet}`,
+                        {
+                            name: "Regalias Founding acumuladas",
+                            symbol: "FOUNDING",
+                            year: null,
+                            index: null
+                        }
+                    );
+                    if (syntheticRow) {
+                        syntheticRow.foundingStatusGain += totalFoundingRegaliasWallet;
                     }
                 }
             }
         } catch (error) {
-            console.error("Error calculando detalle de NFT exclusivo por loteria:", error);
+            console.error("Error calculando detalle de status NFT por loteria:", error);
         }
 
         const rows = [...rowsMap.values()]
@@ -1674,7 +1880,9 @@ exports.getEarningsBreakdownByLottery = async (req, res) => {
                 const indirectTeamLost = roundCurrency(row.indirectTeamLost);
                 const lostTeamGain = roundCurrency(directTeamLost + indirectTeamLost);
                 const teamGain = roundCurrency(directTeamGain + indirectTeamGain);
-                const nftExclusiveGain = roundCurrency(row.nftExclusiveGain);
+                const primeStatusGain = roundCurrency(row.primeStatusGain || 0);
+                const foundingStatusGain = roundCurrency(row.foundingStatusGain || 0);
+                const nftExclusiveGain = roundCurrency(primeStatusGain + foundingStatusGain);
                 const prizeGain = roundCurrency(row.prizeGain);
                 const totalGain = roundCurrency(teamGain + nftExclusiveGain + prizeGain);
 
@@ -1687,6 +1895,8 @@ exports.getEarningsBreakdownByLottery = async (req, res) => {
                     lostTeamGain,
                     lastLostAt: row.lastLostAt || null,
                     teamGain,
+                    primeStatusGain,
+                    foundingStatusGain,
                     nftExclusiveGain,
                     prizeGain,
                     totalGain
@@ -1723,6 +1933,8 @@ exports.getEarningsBreakdownByLottery = async (req, res) => {
                 acc.indirectTeamLost += row.indirectTeamLost;
                 acc.lostTeamGain += row.lostTeamGain;
                 acc.teamGain += row.teamGain;
+                acc.primeStatusGain += row.primeStatusGain;
+                acc.foundingStatusGain += row.foundingStatusGain;
                 acc.nftExclusiveGain += row.nftExclusiveGain;
                 acc.prizeGain += row.prizeGain;
                 acc.totalGain += row.totalGain;
@@ -1735,6 +1947,8 @@ exports.getEarningsBreakdownByLottery = async (req, res) => {
                 indirectTeamLost: 0,
                 lostTeamGain: 0,
                 teamGain: 0,
+                primeStatusGain: 0,
+                foundingStatusGain: 0,
                 nftExclusiveGain: 0,
                 prizeGain: 0,
                 totalGain: 0
@@ -1757,6 +1971,8 @@ exports.getEarningsBreakdownByLottery = async (req, res) => {
                 indirectTeamLost: roundCurrency(totals.indirectTeamLost),
                 lostTeamGain: roundCurrency(totals.lostTeamGain),
                 teamGain: roundCurrency(totals.teamGain),
+                primeStatusGain: roundCurrency(totals.primeStatusGain),
+                foundingStatusGain: roundCurrency(totals.foundingStatusGain),
                 nftExclusiveGain: roundCurrency(totals.nftExclusiveGain),
                 prizeGain: roundCurrency(totals.prizeGain),
                 totalGain: roundCurrency(totals.totalGain)

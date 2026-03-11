@@ -26,12 +26,26 @@ const shareRoomSchema = new Schema(
     { timestamps: true }
 );
 
+const userGuideSchema = new Schema(
+    {
+        fileName: { type: String, required: true, trim: true },
+        mimeType: { type: String, required: true, trim: true, default: "application/pdf" },
+        sizeBytes: { type: Number, required: true, min: 1 },
+        uploadedAt: { type: Date, required: true },
+        uploadedById: { type: String, default: "", trim: true },
+        uploadedByUsername: { type: String, default: "", trim: true },
+        data: { type: Buffer, required: true, select: false },
+    },
+    { _id: false }
+);
+
 const trustplayInfoSchema = new Schema(
     {
         // TrustplayInfo solo conserva metadatos institucionales no legales.
         // La fuente de verdad legal es /api/legal/*.
         social: { type: [footerLinkSchema], default: [] },
-        shareRooms: { type: [shareRoomSchema], default: [] }
+        shareRooms: { type: [shareRoomSchema], default: [] },
+        userGuide: { type: userGuideSchema, default: null }
     },
     {
         timestamps: true,

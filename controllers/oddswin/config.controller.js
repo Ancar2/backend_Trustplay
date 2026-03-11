@@ -9,6 +9,7 @@ const DEFAULTS = {
     middleware: getEnvAddress("DEFAULT_MIDDLEWARE_ADDRESS"),
     factory: getEnvAddress("DEFAULT_FACTORY_ADDRESS"),
     exclusiveNFT: getEnvAddress("DEFAULT_EXCLUSIVE_NFT_ADDRESS"),
+    foundingCircle: getEnvAddress("DEFAULT_FOUNDING_CIRCLE_ADDRESS"),
     usdt: getEnvAddress("DEFAULT_USDT_ADDRESS"),
     owner: getEnvAddress("DEFAULT_FACTORY_OWNER")
 };
@@ -22,9 +23,12 @@ const configController = {
                 // If no config exists, create it with defaults
                 config = new GlobalConfig(DEFAULTS);
                 await config.save();
-            } else if (!config.owner) {
-                // Migration: If owner is missing but doc exists, add default owner
-                config.owner = DEFAULTS.owner || '';
+            } else if (!config.owner || typeof config.foundingCircle === "undefined") {
+                // Migration: asegurar campos nuevos en docs existentes.
+                if (!config.owner) config.owner = DEFAULTS.owner || '';
+                if (typeof config.foundingCircle === "undefined") {
+                    config.foundingCircle = DEFAULTS.foundingCircle || '';
+                }
                 await config.save();
             }
 
@@ -43,7 +47,7 @@ const configController = {
 
     updateConfig: async (req, res) => {
         try {
-            const { sponsors, middleware, factory, exclusiveNFT, usdt, owner } = req.body;
+            const { sponsors, middleware, factory, exclusiveNFT, foundingCircle, usdt, owner } = req.body;
 
             // Upsert: Find and update, or create if not found
             // Since we expect only one doc, we can findOneAndUpdate a loose query or just findOne
@@ -58,6 +62,7 @@ const configController = {
             if (middleware) config.middleware = middleware;
             if (factory) config.factory = factory;
             if (exclusiveNFT) config.exclusiveNFT = exclusiveNFT;
+            if (foundingCircle) config.foundingCircle = foundingCircle;
             if (usdt) config.usdt = usdt;
             if (owner) config.owner = owner;
 

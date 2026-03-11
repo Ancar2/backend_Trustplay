@@ -83,7 +83,6 @@ api_Trustplay/
 │  └─ emailTemplates.js
 ├─ scripts/
 │  ├─ seed-legal-documents.js
-│  ├─ cleanup-legacy-trustplay-legal.js
 │  ├─ security-baseline-check.js
 │  └─ dependency-audit.js
 ├─ tests/

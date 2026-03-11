@@ -3,6 +3,7 @@ const {
     getOddswinReconcileStatus,
     requestOddswinReconcileStop
 } = require("../../services/oddswin/reconcile.service");
+const { runStatusClaimsReconciliation } = require("../../services/oddswin/statusClaimsReconcile.service");
 const Lottery = require("../../models/oddswin/lottery.model");
 
 const toOptionalInt = (value) => {
@@ -169,6 +170,37 @@ exports.stopReconcile = async (req, res) => {
         return res.status(500).json({
             ok: false,
             msj: "Error solicitando detencion de reconciliacion"
+        });
+    }
+};
+
+exports.runStatusClaimsReconcile = async (req, res) => {
+    try {
+        const mode = req.body?.mode === "manual" ? "manual" : "last5000";
+        const report = await runStatusClaimsReconciliation({
+            mode,
+            fromBlock: toOptionalInt(req.body?.fromBlock),
+            toBlock: toOptionalInt(req.body?.toBlock),
+            primeContractAddress: toOptionalAddress(req.body?.primeContractAddress),
+            foundingContractAddress: toOptionalAddress(req.body?.foundingContractAddress)
+        });
+
+        return res.status(200).json({
+            ok: true,
+            report
+        });
+    } catch (error) {
+        if (error?.code === "VALIDATION_ERROR") {
+            return res.status(400).json({
+                ok: false,
+                msj: error.message
+            });
+        }
+
+        console.error("Error runStatusClaimsReconcile:", error);
+        return res.status(500).json({
+            ok: false,
+            msj: "Error reconciliando reclamos de status"
         });
     }
 };

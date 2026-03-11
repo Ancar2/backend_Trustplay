@@ -65,6 +65,48 @@ const parseAllowedOrigins = () => {
     return [...new Set(configured)];
 };
 
+// Excepciones puntuales para solicitudes sin Origin (navegador/crawler/health checks).
+const isNoOriginPathAllowed = (req) => {
+    const path = String(req.path || req.originalUrl || "").split("?")[0];
+    if (!path) return false;
+
+    if (path === "/api/health") return true;
+    if (path.startsWith("/share/")) return true;
+
+    // Callback OAuth opcional (si se habilita flujo server-side en el futuro).
+    if (path.startsWith("/api/auth/callback")) return true;
+
+    return false;
+};
+
+const getRequestPath = (req) => String(req.path || req.originalUrl || "").split("?")[0];
+
+// Excepciones para validación de header secreto inyectado por Cloudflare.
+const isEdgeGuardBypassPath = (req) => {
+    const path = getRequestPath(req);
+    if (!path) return false;
+    if (path === "/api/health") return true;
+    if (path.startsWith("/share/")) return true;
+    return false;
+};
+
+const resolveEdgeGuardConfig = ({ isProductionEnv }) => {
+    const enabled = isProductionEnv
+        ? asBoolean(process.env.EDGE_AUTH_ENABLED, true)
+        : asBoolean(process.env.EDGE_AUTH_ENABLED, false);
+
+    const headerName = String(process.env.EDGE_SHARED_HEADER || "x-trustplay-edge-key")
+        .trim()
+        .toLowerCase();
+    const secret = String(process.env.EDGE_SHARED_SECRET || "").trim();
+
+    return {
+        enabled: Boolean(enabled),
+        headerName,
+        secret
+    };
+};
+
 // Crea y configura la instancia de Express con todos los middlewares y rutas.
 const buildApp = ({ apiRouter, trustplayInfoController, isProductionEnv, allowedOrigins, sameDomainDeployment }) => {
     const app = express();
@@ -95,9 +137,13 @@ const buildApp = ({ apiRouter, trustplayInfoController, isProductionEnv, allowed
     const corsOptionsDelegate = (req, callback) => {
         const origin = req.header("origin");
 
-        // Si no hay origin, normalmente es una llamada server-to-server, curl o Postman.
+        // Si no hay origin, solo se permiten rutas técnicas/publicas explícitas.
         if (!origin) {
-            callback(null, { origin: true, credentials: true, optionsSuccessStatus: 200 });
+            if (isNoOriginPathAllowed(req)) {
+                callback(null, { origin: true, credentials: true, optionsSuccessStatus: 200 });
+                return;
+            }
+            callback(new Error("Not allowed by CORS"));
             return;
         }
 
@@ -128,7 +174,22 @@ const buildApp = ({ apiRouter, trustplayInfoController, isProductionEnv, allowed
 
     // Habilita CORS y parseo JSON con límite de tamaño.
     app.use(cors(corsOptionsDelegate));
-    app.use(express.json({ limit: "1mb" }));
+    app.use(express.json({ limit: "8mb" }));
+
+    // Guardia de edge: solo permite tráfico que llega con header secreto inyectado por Cloudflare.
+    const edgeGuard = resolveEdgeGuardConfig({ isProductionEnv });
+    app.use((req, res, next) => {
+        if (!edgeGuard.enabled) return next();
+        if (req.method === "OPTIONS") return next();
+        if (isEdgeGuardBypassPath(req)) return next();
+
+        const inboundSecret = String(req.header(edgeGuard.headerName) || "").trim();
+        if (inboundSecret && inboundSecret === edgeGuard.secret) {
+            return next();
+        }
+
+        return res.status(403).json({ msj: "Acceso restringido al edge autorizado." });
+    });
 
     // Ruta publica para compartir salas (ALB puede enrutar /share/* directo al backend).
     app.get("/share/:slug", trustplayInfoController.openShareRoomPage);

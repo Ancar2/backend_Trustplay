@@ -188,7 +188,9 @@ const validateCreateLotteryBody = (req) => {
         boxPrice,
         percentageWinner,
         percentageSponsorWinner,
-        percentageMostReferrals
+        percentageMostReferrals,
+        percentageExclusiveNft,
+        percentageFoundingCircle
     } = req.body || {};
 
     if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
@@ -214,6 +216,12 @@ const validateCreateLotteryBody = (req) => {
     if (percentageMostReferrals !== undefined && !isFiniteNumberLike(percentageMostReferrals)) {
         errors.push("percentageMostReferrals debe ser numérico.");
     }
+    if (percentageExclusiveNft !== undefined && !isFiniteNumberLike(percentageExclusiveNft)) {
+        errors.push("percentageExclusiveNft debe ser numérico.");
+    }
+    if (percentageFoundingCircle !== undefined && !isFiniteNumberLike(percentageFoundingCircle)) {
+        errors.push("percentageFoundingCircle debe ser numérico.");
+    }
 
     return errors;
 };
@@ -227,7 +235,8 @@ const validateCloseLotteryBody = (req) => {
         winnerTopBuyer,
         winnerMostReferrals,
         finalPool,
-        txHash
+        txHash,
+        emergencyResolvePercents
     } = req.body || {};
 
     if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
@@ -254,6 +263,39 @@ const validateCloseLotteryBody = (req) => {
     if (txHash !== undefined && txHash !== null) {
         if (typeof txHash !== "string" || !/^0x[a-fA-F0-9]{64}$/.test(txHash.trim())) {
             errors.push("txHash debe ser un hash válido de transacción.");
+        }
+    }
+
+    if (emergencyResolvePercents !== undefined) {
+        if (!isPlainObject(emergencyResolvePercents)) {
+            errors.push("emergencyResolvePercents debe ser un objeto.");
+        } else {
+            const requiredFields = [
+                "winner",
+                "sponsor",
+                "topBuyer",
+                "maxSponsors",
+                "exclusiveNft",
+                "foundingCircle"
+            ];
+
+            let total = 0;
+            requiredFields.forEach((field) => {
+                const value = emergencyResolvePercents[field];
+                if (!isIntegerLike(value)) {
+                    errors.push(`emergencyResolvePercents.${field} debe ser entero.`);
+                    return;
+                }
+                const numeric = Number(value);
+                if (numeric < 0 || numeric > 10000) {
+                    errors.push(`emergencyResolvePercents.${field} debe estar entre 0 y 10000.`);
+                }
+                total += numeric;
+            });
+
+            if (total > 10000) {
+                errors.push("La suma de emergencyResolvePercents no puede superar 10000.");
+            }
         }
     }
 
@@ -348,11 +390,11 @@ const validateClaimRecordBody = (req) => {
 
 const validateConfigUpdateBody = (req) => {
     const errors = [];
-    const { sponsors, middleware, factory, exclusiveNFT, usdt, owner } = req.body || {};
+    const { sponsors, middleware, factory, exclusiveNFT, foundingCircle, usdt, owner } = req.body || {};
 
     if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
 
-    [sponsors, middleware, factory, exclusiveNFT, usdt, owner].forEach((value) => {
+    [sponsors, middleware, factory, exclusiveNFT, foundingCircle, usdt, owner].forEach((value) => {
         if (value !== undefined && value !== null && typeof value !== "string") {
             errors.push("Los campos de config deben ser string.");
         }
@@ -416,6 +458,33 @@ const validateTrustplayShareRoomBody = (req) => {
 
     if (order !== undefined && !isIntegerLike(order)) {
         errors.push("order debe ser entero.");
+    }
+
+    return errors;
+};
+
+const validateTrustplayUserGuideBody = (req) => {
+    const errors = [];
+    const { fileName, mimeType, fileBase64 } = req.body || {};
+
+    if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
+    if (!isNonEmptyString(fileName)) errors.push("fileName es requerido.");
+    if (!isNonEmptyString(fileBase64)) errors.push("fileBase64 es requerido.");
+
+    if (typeof fileName === "string" && fileName.trim().length > 180) {
+        errors.push("fileName excede 180 caracteres.");
+    }
+
+    if (mimeType !== undefined && mimeType !== null && String(mimeType).trim() !== "application/pdf") {
+        errors.push("mimeType debe ser application/pdf.");
+    }
+
+    if (
+        typeof fileBase64 === "string"
+        && fileBase64.trim().length > 0
+        && !/^(data:application\/pdf;base64,)?[A-Za-z0-9+/=\s]+$/.test(fileBase64.trim())
+    ) {
+        errors.push("fileBase64 no tiene un formato base64 válido.");
     }
 
     return errors;
@@ -589,6 +658,60 @@ const validateReconcileLotteriesBody = (req) => {
     return errors;
 };
 
+const validateReconcileStatusClaimsBody = (req) => {
+    const errors = [];
+    const {
+        mode,
+        fromBlock,
+        toBlock,
+        primeContractAddress,
+        foundingContractAddress
+    } = req.body || {};
+
+    if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON valido.");
+
+    if (mode !== undefined && mode !== "last5000" && mode !== "manual") {
+        errors.push("mode debe ser 'last5000' o 'manual'.");
+    }
+
+    if (fromBlock !== undefined && !isIntegerLike(fromBlock)) errors.push("fromBlock debe ser entero.");
+    if (toBlock !== undefined && !isIntegerLike(toBlock)) errors.push("toBlock debe ser entero.");
+    if (primeContractAddress !== undefined && !isHexAddress(primeContractAddress)) {
+        errors.push("primeContractAddress debe ser una direccion valida.");
+    }
+    if (foundingContractAddress !== undefined && !isHexAddress(foundingContractAddress)) {
+        errors.push("foundingContractAddress debe ser una direccion valida.");
+    }
+
+    if (fromBlock !== undefined && isIntegerLike(fromBlock) && Number(fromBlock) < 0) {
+        errors.push("fromBlock no puede ser negativo.");
+    }
+    if (toBlock !== undefined && isIntegerLike(toBlock) && Number(toBlock) < 0) {
+        errors.push("toBlock no puede ser negativo.");
+    }
+
+    const effectiveMode = mode === "manual" ? "manual" : "last5000";
+    if (effectiveMode === "manual") {
+        if (fromBlock === undefined || toBlock === undefined) {
+            errors.push("En modo manual debes enviar fromBlock y toBlock.");
+        }
+    } else if (fromBlock !== undefined || toBlock !== undefined) {
+        errors.push("fromBlock/toBlock solo se permiten en modo manual.");
+    }
+
+    if (
+        fromBlock !== undefined
+        && toBlock !== undefined
+        && isIntegerLike(fromBlock)
+        && isIntegerLike(toBlock)
+        && Number(fromBlock) > Number(toBlock)
+    ) {
+        errors.push("fromBlock no puede ser mayor que toBlock.");
+    }
+
+    return errors;
+};
+
 module.exports = {
     validateRequest,
     validators: {
@@ -609,9 +732,11 @@ module.exports = {
         configUpdateBody: validateConfigUpdateBody,
         trustplayUpdateBody: validateTrustplayUpdateBody,
         trustplayShareRoomBody: validateTrustplayShareRoomBody,
+        trustplayUserGuideBody: validateTrustplayUserGuideBody,
         legalAcceptBody: validateLegalAcceptBody,
         legalCreateVersionBody: validateLegalCreateVersionBody,
         reconcileBody: validateReconcileBody,
-        reconcileLotteriesBody: validateReconcileLotteriesBody
+        reconcileLotteriesBody: validateReconcileLotteriesBody,
+        reconcileStatusClaimsBody: validateReconcileStatusClaimsBody
     }
 };

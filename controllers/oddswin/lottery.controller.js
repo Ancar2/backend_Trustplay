@@ -160,6 +160,31 @@ const resolveTopBuyerTierPercent = (lottery, recipientBoxes) => {
     return percentage3;
 };
 
+const resolveEmergencyPercentsOverride = (payload = {}) => {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+
+    const parsed = {
+        winner: toFiniteNumber(payload.winner, NaN),
+        sponsor: toFiniteNumber(payload.sponsor, NaN),
+        topBuyer: toFiniteNumber(payload.topBuyer, NaN),
+        maxSponsors: toFiniteNumber(payload.maxSponsors, NaN),
+        exclusiveNft: toFiniteNumber(payload.exclusiveNft, NaN),
+        foundingCircle: toFiniteNumber(payload.foundingCircle, NaN)
+    };
+
+    const values = Object.values(parsed);
+    if (values.some((value) => !Number.isFinite(value) || value < 0 || value > 10000 || !Number.isInteger(value))) {
+        return { error: "Los porcentajes de emergencyResolve deben ser enteros entre 0 y 10000." };
+    }
+
+    const total = values.reduce((acc, value) => acc + value, 0);
+    if (total > 10000) {
+        return { error: "La suma de porcentajes de emergencyResolve no puede superar 10000." };
+    }
+
+    return parsed;
+};
+
 const resolveFactoryAddress = async () => {
     const config = await GlobalConfig.findOne().select("factory").lean().catch(() => null);
     const fromConfig = normalizeAddress(config?.factory || "");
@@ -795,7 +820,8 @@ exports.closeLottery = async (req, res) => {
             winnerTopBuyer,
             winnerMostReferrals,
             finalPool,
-            txHash
+            txHash,
+            emergencyResolvePercents
         } = req.body || {};
 
         const normalizedLotteryAddress = normalizeAddress(address);
@@ -810,6 +836,10 @@ exports.closeLottery = async (req, res) => {
 
         const normalizedTxHash = normalizeTxHash(txHash);
         const shouldSyncFromChain = Boolean(normalizedTxHash);
+        const emergencyPercentsOverride = resolveEmergencyPercentsOverride(emergencyResolvePercents);
+        if (emergencyPercentsOverride?.error) {
+            return res.status(400).json({ msj: emergencyPercentsOverride.error });
+        }
 
         if (lottery.completed && !shouldSyncFromChain) {
             return res.status(400).json({ msj: "La lotería ya está cerrada" });
@@ -859,10 +889,18 @@ exports.closeLottery = async (req, res) => {
                     totalPool = lottery.boxesSold * lottery.boxPrice;
                 }
 
-                const percentageWinner = toFiniteNumber(lottery.percentageWinner, 0);
-                const percentageSponsorWinner = toFiniteNumber(lottery.percentageSponsorWinner, 0);
-                const percentageMostReferrals = toFiniteNumber(lottery.percentageMostReferrals, 0);
-                const topBuyerTierPercent = resolveTopBuyerTierPercent(lottery, closeData.topBuyerBoxes);
+                const percentageWinner = emergencyPercentsOverride
+                    ? emergencyPercentsOverride.winner
+                    : toFiniteNumber(lottery.percentageWinner, 0);
+                const percentageSponsorWinner = emergencyPercentsOverride
+                    ? emergencyPercentsOverride.sponsor
+                    : toFiniteNumber(lottery.percentageSponsorWinner, 0);
+                const percentageMostReferrals = emergencyPercentsOverride
+                    ? emergencyPercentsOverride.maxSponsors
+                    : toFiniteNumber(lottery.percentageMostReferrals, 0);
+                const topBuyerTierPercent = emergencyPercentsOverride
+                    ? emergencyPercentsOverride.topBuyer
+                    : resolveTopBuyerTierPercent(lottery, closeData.topBuyerBoxes);
 
                 closeData.winnerPrize = closeData.winnerAddress
                     ? (totalPool * percentageWinner) / 10000
@@ -895,9 +933,15 @@ exports.closeLottery = async (req, res) => {
                 totalPool = lottery.boxesSold * lottery.boxPrice;
             }
 
-            const percentageWinner = toFiniteNumber(lottery.percentageWinner, 0);
-            const percentageSponsorWinner = toFiniteNumber(lottery.percentageSponsorWinner, 0);
-            const percentageMostReferrals = toFiniteNumber(lottery.percentageMostReferrals, 0);
+            const percentageWinner = emergencyPercentsOverride
+                ? emergencyPercentsOverride.winner
+                : toFiniteNumber(lottery.percentageWinner, 0);
+            const percentageSponsorWinner = emergencyPercentsOverride
+                ? emergencyPercentsOverride.sponsor
+                : toFiniteNumber(lottery.percentageSponsorWinner, 0);
+            const percentageMostReferrals = emergencyPercentsOverride
+                ? emergencyPercentsOverride.maxSponsors
+                : toFiniteNumber(lottery.percentageMostReferrals, 0);
 
             const prizeWinner = normalizedWinnerAddress
                 ? (totalPool * percentageWinner) / 10000
@@ -914,7 +958,9 @@ exports.closeLottery = async (req, res) => {
                 });
             }
 
-            const topBuyerTierPercent = resolveTopBuyerTierPercent(lottery, recipientBoxes);
+            const topBuyerTierPercent = emergencyPercentsOverride
+                ? emergencyPercentsOverride.topBuyer
+                : resolveTopBuyerTierPercent(lottery, recipientBoxes);
             const prizeTopBuyer = normalizedWinnerTopBuyer
                 ? (totalPool * topBuyerTierPercent) / 10000
                 : 0;
@@ -936,6 +982,38 @@ exports.closeLottery = async (req, res) => {
                 mostReferralsPrize: prizeMostReferrals
             };
         }
+
+        let resolvedRewardPool = 0;
+        if (finalPool !== undefined && finalPool !== null) {
+            const parsedFinalPool = Number(finalPool);
+            if (!Number.isFinite(parsedFinalPool) || parsedFinalPool < 0) {
+                return res.status(400).json({ msj: "finalPool inválido" });
+            }
+            resolvedRewardPool = parsedFinalPool;
+        } else {
+            resolvedRewardPool = toFiniteNumber(lottery.boxesSold, 0) * toFiniteNumber(lottery.boxPrice, 0);
+        }
+
+        if (emergencyPercentsOverride) {
+            // En cierre por emergencyResolve los porcentajes manuales no se persisten en DB.
+            // Se dejan en 0 para evitar que reescriban la configuracion historica del evento.
+            lottery.percentageWinner = 0;
+            lottery.percentageSponsorWinner = 0;
+            lottery.percentageMostReferrals = 0;
+            lottery.percentageExclusiveNft = 0;
+            lottery.percentageFoundingCircle = 0;
+
+            if (lottery.incentiveMaxBuyer && typeof lottery.incentiveMaxBuyer === "object") {
+                lottery.incentiveMaxBuyer.percentage1 = 0;
+                lottery.incentiveMaxBuyer.percentage2 = 0;
+                lottery.incentiveMaxBuyer.percentage3 = 0;
+            }
+        }
+
+        const percentageExclusiveNft = toFiniteNumber(lottery.percentageExclusiveNft, 0);
+        const percentageFoundingCircle = toFiniteNumber(lottery.percentageFoundingCircle, 0);
+        lottery.exclusiveNftRewardPool = (resolvedRewardPool * percentageExclusiveNft) / 10000;
+        lottery.foundingCircleRewardPool = (resolvedRewardPool * percentageFoundingCircle) / 10000;
 
         lottery.winningNumber = toFiniteNumber(closeData.winningNumber, 0);
         lottery.completed = Boolean(closeData.completed);

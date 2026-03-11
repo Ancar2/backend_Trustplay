@@ -54,7 +54,7 @@ const buildLayout = ({
     const safeCtaLabel = escapeHtml(ctaLabel);
     const safeCtaUrl = escapeHtml(ctaUrl);
     const logoUrl = escapeHtml(resolveLogoUrl());
-    const supportEmail = escapeHtml("support@trustplay.com");
+    const supportEmail = escapeHtml(process.env.SMTP_EMAIL || "soporte@trustplay.com");
     const currentYear = new Date().getFullYear();
 
     return `

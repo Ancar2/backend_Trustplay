@@ -15,6 +15,24 @@ router.put(
     validateRequest(validators.trustplayUpdateBody),
     trustplayInfoController.updateInfo
 );
+router.put(
+    "/trustplay-info/user-guide",
+    authMiddleware.verifyToken,
+    authMiddleware.isAdmin,
+    validateRequest(validators.trustplayUserGuideBody),
+    trustplayInfoController.uploadUserGuide
+);
+router.delete(
+    "/trustplay-info/user-guide",
+    authMiddleware.verifyToken,
+    authMiddleware.isAdmin,
+    trustplayInfoController.deleteUserGuide
+);
+router.get(
+    "/trustplay-info/user-guide/download",
+    authMiddleware.verifyToken,
+    trustplayInfoController.downloadUserGuide
+);
 router.get(
     "/trustplay-info/share-rooms",
     authMiddleware.verifyToken,

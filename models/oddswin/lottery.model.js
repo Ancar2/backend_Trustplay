@@ -58,7 +58,15 @@ const esquemaLoteria = new mongoose.Schema(
             type: Number,
             default: 0
         },
+        percentageFoundingCircle: {
+            type: Number,
+            default: 0
+        },
         exclusiveNftRewardPool: {
+            type: Number,
+            default: 0
+        },
+        foundingCircleRewardPool: {
             type: Number,
             default: 0
         },

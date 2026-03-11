@@ -62,6 +62,24 @@ const validateRateLimitConfig = () => {
     }
 };
 
+const validateEdgeGuardConfig = (isProduction) => {
+    const edgeAuthEnabled = isProduction
+        ? asBoolean(process.env.EDGE_AUTH_ENABLED, true)
+        : asBoolean(process.env.EDGE_AUTH_ENABLED, false);
+
+    if (!edgeAuthEnabled) return;
+
+    const headerName = asTrimmed(process.env.EDGE_SHARED_HEADER || "x-trustplay-edge-key");
+    if (!headerName) {
+        throw new Error("EDGE_SHARED_HEADER no puede estar vacío cuando EDGE_AUTH_ENABLED=true.");
+    }
+
+    const secret = asTrimmed(process.env.EDGE_SHARED_SECRET);
+    if (!secret) {
+        throw new Error("EDGE_SHARED_SECRET es obligatorio cuando EDGE_AUTH_ENABLED=true.");
+    }
+};
+
 const validateEnv = () => {
     const isProduction = asTrimmed(process.env.NODE_ENV).toLowerCase() === "production";
 
@@ -71,6 +89,7 @@ const validateEnv = () => {
     validateRateLimitConfig();
     validateCorsConfig(isProduction);
     validateSameDomainFlag();
+    validateEdgeGuardConfig(isProduction);
 };
 
 module.exports = {

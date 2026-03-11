@@ -6,6 +6,20 @@ const normalizeWallet = (value) => (
     typeof value === "string" ? value.trim().toLowerCase() : ""
 );
 
+const buildCurrentOwnerMatch = (wallets = []) => {
+    const filtered = Array.isArray(wallets) ? wallets.map(normalizeWallet).filter(Boolean) : [];
+    if (!filtered.length) return { ownerCurrent: { $in: [] } };
+
+    return {
+        $or: [
+            { ownerCurrent: { $in: filtered } },
+            { ownerCurrent: { $exists: false }, owner: { $in: filtered } },
+            { ownerCurrent: "", owner: { $in: filtered } },
+            { ownerCurrent: null, owner: { $in: filtered } }
+        ]
+    };
+};
+
 // Registrar la compra de una Box en la base de datos de ODDSWIN
 // Esto se llamaría después de que el frontend confirme la transacción en blockchain
 exports.registerBoxPurchase = async (req, res) => {
@@ -70,6 +84,10 @@ exports.registerBoxPurchase = async (req, res) => {
             direccionLoteria: normalizedLotteryAddress,
             boxId,
             owner: normalizedOwner,
+            buyer: normalizedOwner,
+            ownerCurrent: normalizedOwner,
+            ownerCurrentUpdatedAt: new Date(),
+            ownerCurrentTxHash: transactionHash,
             ticket1,
             ticket2,
             hashDeLaTransaccion: transactionHash
@@ -184,8 +202,50 @@ exports.registerBoxPurchase = async (req, res) => {
         res.status(201).json({ msj: "Compra registrada exitosamente en ODDSWIN", box: newBox });
 
     } catch (error) {
-        console.error("Error registrando compra:", error);
-        res.status(500).json({ msj: "Error interno registrando la compra" });
+        const normalizedLotteryAddress = normalizeWallet(req.body?.lotteryAddress);
+        const parsedBoxId = Number(req.body?.boxId);
+
+        // Idempotencia: si llega el mismo registro por reintentos/race, no fallamos la UX.
+        if (error?.code === 11000) {
+            const existingBox = Number.isFinite(parsedBoxId)
+                ? await Box.findOne({ direccionLoteria: normalizedLotteryAddress, boxId: parsedBoxId })
+                : null;
+
+            return res.status(200).json({
+                msj: "Esta Box ya estaba registrada en ODDSWIN",
+                box: existingBox,
+                duplicate: true
+            });
+        }
+
+        if (error?.name === "ValidationError") {
+            const validationMessage = Object.values(error.errors || {})
+                .map((item) => item?.message)
+                .filter(Boolean)
+                .join(", ");
+
+            return res.status(400).json({
+                msj: validationMessage || "Datos inválidos al registrar la compra"
+            });
+        }
+
+        if (error?.name === "CastError") {
+            return res.status(400).json({
+                msj: `Campo inválido: ${error?.path || "desconocido"}`
+            });
+        }
+
+        console.error("Error registrando compra:", {
+            message: error?.message,
+            code: error?.code,
+            stack: error?.stack
+        });
+
+        const isProduction = String(process.env.NODE_ENV || "").toLowerCase() === "production";
+        return res.status(500).json({
+            msj: "Error interno registrando la compra",
+            ...(isProduction ? {} : { detail: error?.message || "unknown_error" })
+        });
     }
 };
 
@@ -229,7 +289,7 @@ exports.getUserBoxes = async (req, res) => {
         const result = await Box.aggregate([
             {
                 $match: {
-                    owner: { $in: searchWallets }, // Usamos la lista filtrada
+                    ...buildCurrentOwnerMatch(searchWallets),
                     ...(req.query.lotteryAddress ? { direccionLoteria: req.query.lotteryAddress.toLowerCase() } : {})
                 }
 
@@ -255,7 +315,20 @@ exports.getUserBoxes = async (req, res) => {
                     ticket1: 1,
                     ticket2: 1,
                     fechaDeCompra: 1,
-                    owner: 1,
+                    owner: {
+                        $cond: [
+                            { $or: [{ $eq: ["$ownerCurrent", null] }, { $eq: ["$ownerCurrent", ""] }] },
+                            "$owner",
+                            "$ownerCurrent"
+                        ]
+                    },
+                    buyer: {
+                        $cond: [
+                            { $or: [{ $eq: ["$buyer", null] }, { $eq: ["$buyer", ""] }] },
+                            "$owner",
+                            "$buyer"
+                        ]
+                    },
                     lotteryName: "$lotteryInfo.name",
                     lotterySymbol: "$lotteryInfo.symbol",
                     lotteryAddress: "$direccionLoteria",
@@ -303,7 +376,7 @@ exports.getBoxesCountByOwnerAndLottery = async (req, res) => {
 
         const totalBoxes = await Box.countDocuments({
             direccionLoteria: lotteryAddress,
-            owner
+            ...buildCurrentOwnerMatch([owner])
         });
 
         return res.status(200).json({ totalBoxes });
@@ -326,7 +399,7 @@ exports.getBoxesByLotteryAddress = async (req, res) => {
         const skip = (Number(page) - 1) * Number(limit);
 
         const boxes = await Box.find({ direccionLoteria: address.toLowerCase() })
-            .select("boxId ticket1 ticket2 owner hashDeLaTransaccion")
+            .select("boxId ticket1 ticket2 owner ownerCurrent buyer hashDeLaTransaccion")
             .sort({ boxId: -1 }) // Descending: Last first
             .skip(skip)
             .limit(Number(limit));
@@ -338,7 +411,8 @@ exports.getBoxesByLotteryAddress = async (req, res) => {
             boxId: box.boxId,
             ticket1: box.ticket1,
             ticket2: box.ticket2,
-            owner: box.owner,
+            owner: box.ownerCurrent || box.owner,
+            buyer: box.buyer || box.owner,
             hash: box.hashDeLaTransaccion
         }));
 

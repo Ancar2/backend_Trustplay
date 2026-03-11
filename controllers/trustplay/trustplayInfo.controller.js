@@ -14,6 +14,8 @@ const DEFAULT_SHARE_IMAGE = `${String(process.env.FRONTEND_URL || "https://trust
 
 const DEFAULT_SHARE_TITLE = "TrustPlay | Meeting Room";
 const DEFAULT_SHARE_DESCRIPTION = "Accede a la sala oficial configurada por TrustPlay.";
+const DEFAULT_USER_GUIDE_FILENAME = "guia-usuario-trustplay.pdf";
+const MAX_USER_GUIDE_BYTES = Number(process.env.USER_GUIDE_MAX_BYTES || 5 * 1024 * 1024);
 
 const escapeHtml = (value) => String(value || "")
     .replace(/&/g, "&amp;")
@@ -36,6 +38,37 @@ const safeUrl = (value, fallback = "#") => {
     }
 
     return fallback;
+};
+
+const sanitizeFileName = (value, fallback = DEFAULT_USER_GUIDE_FILENAME) => {
+    const cleanValue = String(value || "")
+        .replace(/[^\w.\- ]+/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const normalized = cleanValue || fallback;
+    return normalized.toLowerCase().endsWith(".pdf") ? normalized : `${normalized}.pdf`;
+};
+
+const normalizePdfBase64 = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    return raw.replace(/^data:application\/pdf;base64,/i, "").replace(/\s+/g, "");
+};
+
+const decodePdfBase64 = (value) => {
+    const normalized = normalizePdfBase64(value);
+    if (!normalized || !/^[A-Za-z0-9+/=]+$/.test(normalized)) {
+        return null;
+    }
+
+    try {
+        const buffer = Buffer.from(normalized, "base64");
+        if (!buffer.length) return null;
+        if (buffer.slice(0, 4).toString("utf8") !== "%PDF") return null;
+        return buffer;
+    } catch (_) {
+        return null;
+    }
 };
 
 const normalizeSlug = (value) => String(value || "")
@@ -84,6 +117,23 @@ const getRequestOrigin = (req) => {
 
 const buildShareUrl = (req, slug) => `${getRequestOrigin(req)}/share/${encodeURIComponent(slug)}`;
 
+const buildUserGuideDownloadUrl = (req) => `${getRequestOrigin(req)}/api/trustplay-info/user-guide/download`;
+
+const buildUserGuidePayload = (userGuide, req = null) => {
+    if (!userGuide || !userGuide.fileName || !userGuide.uploadedAt || !Number(userGuide.sizeBytes)) {
+        return null;
+    }
+
+    return {
+        fileName: userGuide.fileName,
+        mimeType: userGuide.mimeType || "application/pdf",
+        sizeBytes: Number(userGuide.sizeBytes),
+        uploadedAt: userGuide.uploadedAt,
+        uploadedByUsername: userGuide.uploadedByUsername || "",
+        downloadUrl: req ? buildUserGuideDownloadUrl(req) : "/api/trustplay-info/user-guide/download",
+    };
+};
+
 const isSocialCrawler = (req) => {
     const userAgent = String(req.header("user-agent") || "").toLowerCase();
     if (!userAgent) return false;
@@ -124,6 +174,7 @@ const ensureInfoDocument = async () => {
         info = new TrustplayInfo({
             social: DEFAULT_SOCIAL_LINKS,
             shareRooms: [],
+            userGuide: null,
         });
         await info.save();
     }
@@ -139,9 +190,10 @@ const sanitizeShareRooms = (rooms = [], req = null) => rooms
         shareUrl: req ? buildShareUrl(req, room.slug) : undefined,
     }));
 
-const buildInfoPayload = ({ info, legalDocuments }) => ({
+const buildInfoPayload = ({ info, legalDocuments, req = null }) => ({
     legal: buildLegalLinksFromDocuments(legalDocuments),
     social: normalizeSocialLinks(info?.social),
+    userGuide: buildUserGuidePayload(info?.userGuide, req),
     createdAt: info?.createdAt || null,
     updatedAt: info?.updatedAt || null,
 });
@@ -155,7 +207,7 @@ const trustplayInfoController = {
 
             return res.status(200).json({
                 ok: true,
-                info: buildInfoPayload({ info, legalDocuments }),
+                info: buildInfoPayload({ info, legalDocuments, req }),
             });
         } catch (error) {
             console.error("Error fetching trustplay info:", error);
@@ -193,13 +245,107 @@ const trustplayInfoController = {
             return res.status(200).json({
                 ok: true,
                 msg: "TrustPlay info updated successfully",
-                info: buildInfoPayload({ info, legalDocuments }),
+                info: buildInfoPayload({ info, legalDocuments, req }),
             });
         } catch (error) {
             console.error("Error updating trustplay info:", error);
             return res.status(500).json({
                 ok: false,
                 msg: "Error updating trustplay info",
+            });
+        }
+    },
+
+    uploadUserGuide: async (req, res) => {
+        try {
+            const fileName = sanitizeFileName(req.body?.fileName);
+            const buffer = decodePdfBase64(req.body?.fileBase64);
+
+            if (!buffer) {
+                return res.status(400).json({
+                    ok: false,
+                    msg: "El archivo enviado no es un PDF valido.",
+                });
+            }
+
+            if (buffer.length > MAX_USER_GUIDE_BYTES) {
+                return res.status(413).json({
+                    ok: false,
+                    msg: `El PDF supera el tamaño máximo permitido (${Math.round(MAX_USER_GUIDE_BYTES / 1024 / 1024)} MB).`,
+                });
+            }
+
+            const info = await ensureInfoDocument();
+            info.userGuide = {
+                fileName,
+                mimeType: "application/pdf",
+                sizeBytes: buffer.length,
+                uploadedAt: new Date(),
+                uploadedById: String(req.user?.id || ""),
+                uploadedByUsername: String(req.user?.username || ""),
+                data: buffer,
+            };
+            await info.save();
+
+            return res.status(200).json({
+                ok: true,
+                msg: "Guia de usuario actualizada correctamente.",
+                userGuide: buildUserGuidePayload(info.userGuide, req),
+            });
+        } catch (error) {
+            console.error("Error uploading user guide:", error);
+            return res.status(500).json({
+                ok: false,
+                msg: "No se pudo guardar la guia de usuario.",
+            });
+        }
+    },
+
+    deleteUserGuide: async (req, res) => {
+        try {
+            const info = await ensureInfoDocument();
+            info.userGuide = null;
+            await info.save();
+
+            return res.status(200).json({
+                ok: true,
+                msg: "Guia de usuario eliminada correctamente.",
+            });
+        } catch (error) {
+            console.error("Error deleting user guide:", error);
+            return res.status(500).json({
+                ok: false,
+                msg: "No se pudo eliminar la guia de usuario.",
+            });
+        }
+    },
+
+    downloadUserGuide: async (req, res) => {
+        try {
+            const info = await TrustplayInfo.findOne().select("+userGuide.data");
+            const userGuide = info?.userGuide;
+            const guideBuffer = userGuide?.data;
+
+            if (!guideBuffer || !Buffer.isBuffer(guideBuffer) || !guideBuffer.length) {
+                return res.status(404).json({
+                    ok: false,
+                    msg: "No hay una guia de usuario disponible para descargar.",
+                });
+            }
+
+            const downloadName = sanitizeFileName(userGuide?.fileName, DEFAULT_USER_GUIDE_FILENAME);
+            res.setHeader("Content-Type", "application/pdf");
+            res.setHeader("Content-Length", String(guideBuffer.length));
+            res.setHeader("Content-Disposition", `attachment; filename="${downloadName}"`);
+            res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+            res.setHeader("Pragma", "no-cache");
+            res.setHeader("Expires", "0");
+            return res.status(200).send(guideBuffer);
+        } catch (error) {
+            console.error("Error downloading user guide:", error);
+            return res.status(500).json({
+                ok: false,
+                msg: "No se pudo descargar la guia de usuario.",
             });
         }
     },

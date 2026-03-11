@@ -4,11 +4,13 @@ const Lottery = require("../../models/oddswin/lottery.model");
 const Box = require("../../models/oddswin/box.model");
 const ReconcileState = require("../../models/system/reconcileState.model");
 const GlobalConfig = require("../../models/oddswin/globalConfig.model");
+const { runStatusClaimsReconciliation } = require("./statusClaimsReconcile.service");
 
 const RECONCILE_KEY = "oddswin_tickets_assigned";
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 const TICKETS_ASSIGNED_TOPIC = ethers.id("TicketsAssigned(address,uint256,uint128,uint128)");
+const TRANSFER_TOPIC = ethers.id("Transfer(address,address,uint256)");
 const FACTORY_NEW_LOTTERY_TOPIC = ethers.id("NewLottery(address)");
 const FACTORY_LOTTERY_CREATED_TOPIC = ethers.id("LotteryCreated(address)");
 
@@ -16,8 +18,13 @@ const ticketsInterface = new ethers.Interface([
     "event TicketsAssigned(address indexed e_buyer, uint256 indexed e_boxId, uint128 e_ticket1, uint128 e_ticket2)"
 ]);
 
+const transferInterface = new ethers.Interface([
+    "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
+]);
+
 const factoryInterface = new ethers.Interface([
     "function createLottery(string,string,uint128,address,uint128,uint256,uint256,tuple(uint128 boxes1,uint128 percentage1,uint128 boxes2,uint128 percentage2,uint128 boxes3,uint128 percentage3),uint256,uint256,uint256)",
+    "function createLottery(string,string,uint128,address,uint128,uint256,uint256,tuple(uint128 boxes1,uint128 percentage1,uint128 boxes2,uint128 percentage2,uint128 boxes3,uint128 percentage3),uint256,uint256,uint256,uint256)",
     "function getLotteriesCount(uint256) view returns (uint256)",
     "function getLotteryAddress(uint256,uint256) view returns (address)",
     "event NewLottery(address indexed e_lotteryAddress)",
@@ -204,10 +211,14 @@ const computeRange = async (provider, options = {}) => {
 
     const latestBlock = await provider.getBlockNumber();
     const safeToBlock = Math.max(0, latestBlock - confirmations);
+    const hasExplicitRange = Number.isInteger(options.fromBlock) || Number.isInteger(options.toBlock);
     const useLatestWindowByDefault = (
-        options.source === "manual"
-        && !Number.isInteger(options.fromBlock)
-        && !Number.isInteger(options.toBlock)
+        !hasExplicitRange
+        && (
+            options.source === "manual"
+            // En automatico usamos siempre ventana movil (ultimos N bloques).
+            || options.source === "automatico"
+        )
     );
 
     let fromBlock = Number.isInteger(options.fromBlock)
@@ -289,6 +300,7 @@ const parseCreateLotteryTx = (tx) => {
         if (!parsed || parsed.name !== "createLottery") return null;
 
         const incentive = parsed.args[7] || {};
+        const hasFoundingCircleParam = Number(parsed.args?.length || 0) >= 12;
         return {
             name: String(parsed.args[0] || ""),
             symbol: String(parsed.args[1] || ""),
@@ -298,7 +310,10 @@ const parseCreateLotteryTx = (tx) => {
             percentageSponsorWinner: toFiniteNumber(parsed.args[6], 0),
             percentageMostReferrals: toFiniteNumber(parsed.args[8], 0),
             percentageExclusiveNft: toFiniteNumber(parsed.args[9], 0),
-            year: toFiniteNumber(parsed.args[10], 0),
+            percentageFoundingCircle: hasFoundingCircleParam ? toFiniteNumber(parsed.args[10], 0) : 0,
+            year: hasFoundingCircleParam
+                ? toFiniteNumber(parsed.args[11], 0)
+                : toFiniteNumber(parsed.args[10], 0),
             incentiveMaxBuyer: {
                 boxes1: toFiniteNumber(incentive.boxes1, 0),
                 percentage1: toFiniteNumber(incentive.percentage1, 0),
@@ -615,6 +630,7 @@ const syncLotteriesFromBlockchain = async (provider, report, options = {}) => {
                 percentageSponsorWinner: toFiniteNumber(creationMetadata?.percentageSponsorWinner, 0),
                 percentageMostReferrals: toFiniteNumber(creationMetadata?.percentageMostReferrals, 0),
                 percentageExclusiveNft: toFiniteNumber(creationMetadata?.percentageExclusiveNft, 0),
+                percentageFoundingCircle: toFiniteNumber(creationMetadata?.percentageFoundingCircle, 0),
                 incentiveMaxBuyer: normalizedIncentive,
                 boxesSold: toFiniteNumber(snapshot.boxesSold, 0),
                 winningNumber: toFiniteNumber(snapshot.winningNumber, 0),
@@ -696,6 +712,9 @@ const syncLotteriesFromBlockchain = async (provider, report, options = {}) => {
         }
         if (toFiniteNumber(existingLottery.percentageExclusiveNft, 0) <= 0 && creationMetadata?.percentageExclusiveNft !== undefined) {
             setIfChanged("percentageExclusiveNft", toFiniteNumber(creationMetadata.percentageExclusiveNft, 0));
+        }
+        if (toFiniteNumber(existingLottery.percentageFoundingCircle, 0) <= 0 && creationMetadata?.percentageFoundingCircle !== undefined) {
+            setIfChanged("percentageFoundingCircle", toFiniteNumber(creationMetadata.percentageFoundingCircle, 0));
         }
 
         if (!existingLottery.incentiveMaxBuyer || Object.keys(existingLottery.incentiveMaxBuyer).length === 0) {
@@ -834,6 +853,10 @@ const processTicketLogsRange = async ({
                         direccionLoteria: lotteryAddress,
                         boxId,
                         owner,
+                        buyer: owner,
+                        ownerCurrent: owner,
+                        ownerCurrentUpdatedAt: new Date(),
+                        ownerCurrentTxHash: log.transactionHash,
                         ticket1,
                         ticket2,
                         hashDeLaTransaccion: log.transactionHash
@@ -847,6 +870,105 @@ const processTicketLogsRange = async ({
                 touchedLotteries.add(lotteryAddress);
             } else {
                 report.cajasYaExistentes += 1;
+            }
+        }
+
+        cursor = chunkToBlock + 1;
+    }
+
+    return { canceled: false };
+};
+
+const processTransferLogsRange = async ({
+    provider,
+    lotteryAddress,
+    fromBlock,
+    toBlock,
+    maxRange,
+    report
+}) => {
+    const rpcTimeoutMs = toPositiveInt(process.env.RECONCILE_RPC_TIMEOUT_MS, 20000);
+    let cursor = fromBlock;
+
+    while (cursor <= toBlock) {
+        if (await shouldStopReconciliation()) {
+            return { canceled: true };
+        }
+
+        const chunkToBlock = Math.min(cursor + maxRange - 1, toBlock);
+        let logs = [];
+        try {
+            logs = await withTimeoutAndCancel(
+                provider.getLogs({
+                    address: lotteryAddress,
+                    fromBlock: cursor,
+                    toBlock: chunkToBlock,
+                    topics: [TRANSFER_TOPIC]
+                }),
+                rpcTimeoutMs,
+                `Timeout consultando logs Transfer para ${lotteryAddress}`
+            );
+        } catch (error) {
+            if (isManualCancelError(error)) {
+                return { canceled: true };
+            }
+            if (await shouldStopReconciliation()) {
+                return { canceled: true };
+            }
+            throw error;
+        }
+
+        report.transferLogsDetectados += logs.length;
+
+        for (const log of logs) {
+            let parsed;
+            try {
+                parsed = transferInterface.parseLog(log);
+            } catch (error) {
+                continue;
+            }
+
+            const to = normalizeAddress(parsed?.args?.to || "");
+            const boxId = Number(parsed?.args?.tokenId);
+
+            if (!Number.isInteger(boxId) || boxId < 0 || !to) {
+                continue;
+            }
+
+            const updateResult = await Box.updateOne(
+                {
+                    direccionLoteria: lotteryAddress,
+                    boxId,
+                    $or: [
+                        { ownerCurrent: { $exists: false } },
+                        { ownerCurrent: "" },
+                        { ownerCurrent: null },
+                        { ownerCurrent: { $ne: to } }
+                    ]
+                },
+                {
+                    $set: {
+                        ownerCurrent: to,
+                        ownerCurrentUpdatedAt: new Date(),
+                        ownerCurrentTxHash: log.transactionHash
+                    }
+                }
+            );
+
+            if (updateResult.matchedCount === 0) {
+                const exists = await Box.exists({ direccionLoteria: lotteryAddress, boxId });
+                if (!exists) {
+                    report.transferSinCaja += 1;
+                } else {
+                    report.transferYaSincronizados += 1;
+                }
+                continue;
+            }
+
+            if (updateResult.modifiedCount > 0) {
+                report.transferActualizados += 1;
+            } else {
+                report.transferYaSincronizados += 1;
             }
         }
 
@@ -884,6 +1006,10 @@ const runOddswinReconciliation = async (options = {}) => {
         logsDetectados: 0,
         cajasInsertadas: 0,
         cajasYaExistentes: 0,
+        transferLogsDetectados: 0,
+        transferActualizados: 0,
+        transferYaSincronizados: 0,
+        transferSinCaja: 0,
         loteriasRecalculadas: 0,
         loteriasSinAddress: 0,
         progresoPorcentaje: 0,
@@ -1069,6 +1195,20 @@ const runOddswinReconciliation = async (options = {}) => {
                 break;
             }
 
+            const transferResult = await processTransferLogsRange({
+                provider,
+                lotteryAddress,
+                fromBlock: lotteryFromBlock,
+                toBlock: range.toBlock,
+                maxRange: range.maxRange,
+                report
+            });
+
+            if (transferResult.canceled) {
+                reconciliationCanceled = true;
+                break;
+            }
+
             processedLotteries += 1;
             await updateLotteryProgress();
         }
@@ -1233,6 +1373,12 @@ const startOddswinReconcileScheduler = () => {
             await runOddswinReconciliation({ source: "automatico" });
         } catch (error) {
             console.error("Error en reconciliacion automatica:", error.message);
+        }
+
+        try {
+            await runStatusClaimsReconciliation({ mode: "last5000" });
+        } catch (error) {
+            console.error("Error en reconciliacion automatica Prime/Founding:", error.message);
         }
     };
 
