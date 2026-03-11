@@ -67,10 +67,17 @@ const parseAllowedOrigins = () => {
 
 const PUBLIC_PATH_EXACT_MATCHES = Object.freeze([
     "/api/health",
+    "/share",
+    "/api/trustplay/share",
+    "/api/games/oddswin/exclusive-nft/metadata",
+    "/api/games/oddswin/founding-circle/metadata",
+    "/api/exclusive-nft/metadata",
+    "/api/founding-circle/metadata",
 ]);
 
 const PUBLIC_PATH_PREFIX_MATCHES = Object.freeze([
     "/share/",
+    "/api/trustplay/share/",
     "/api/auth/callback",
     "/api/games/oddswin/exclusive-nft/metadata/",
     "/api/games/oddswin/founding-circle/metadata/",
