@@ -78,7 +78,7 @@ exports.getUserProfile = async (req, res) => {
                 },
                 {
                     $lookup: {
-                        from: "lotteries", // Nombre de la colección en MongoDB (plural de Lottery)
+                        from: "events", // Nombre de la colección en MongoDB para Lottery
                         localField: "_id",
                         foreignField: "address",
                         as: "lotteryInfo"

@@ -108,7 +108,7 @@ exports.getAllUsers = async (req, res) => {
             },
             {
                 $lookup: {
-                    from: "lotteries",
+                    from: "events",
                     localField: "boxStatsRaw._id",
                     foreignField: "address",
                     as: "lotteryDetails"

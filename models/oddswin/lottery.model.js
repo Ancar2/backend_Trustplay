@@ -190,6 +190,7 @@ const esquemaLoteria = new mongoose.Schema(
     },
     {
         timestamps: true,
+        collection: "events",
     }
 );
 

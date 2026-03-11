@@ -296,7 +296,7 @@ exports.getUserBoxes = async (req, res) => {
             },
             {
                 $lookup: {
-                    from: "lotteries",
+                    from: "events",
                     localField: "direccionLoteria",
                     foreignField: "address",
                     as: "lotteryInfo"
