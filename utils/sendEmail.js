@@ -3,7 +3,9 @@ const nodemailer = require("nodemailer");
 const sendEmail = async (options) => {
     const transporter = nodemailer.createTransport({
         // service: "gmail", // O usa host/port si tienes otro SMTP
-        host: "smtp.gmail.com",
+        // host: "smtp.gmail.com",
+        // port: 587,
+        host: "smtp-relay.brevo.com",
         port: 587,
         // host: "email-smtp.us-east-2.amazonaws.com",
         // port: 587,
