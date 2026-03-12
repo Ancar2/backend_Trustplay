@@ -90,6 +90,21 @@ const buildAuthCookieOptions = () => {
     };
 };
 
+const extractAuthTokenFromRequest = (req) => {
+    const authHeader = req?.headers?.authorization;
+    if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+        const bearerToken = authHeader.slice(7).trim();
+        if (bearerToken && bearerToken !== "none") return bearerToken;
+    }
+
+    const cookieToken = typeof req?.cookies?.token === "string"
+        ? req.cookies.token.trim()
+        : "";
+
+    if (cookieToken && cookieToken !== "none") return cookieToken;
+    return "";
+};
+
 exports.login = async (req, res) => {
     try {
         const { email, password, legalAcceptance } = req.body;
@@ -178,12 +193,30 @@ exports.login = async (req, res) => {
     }
 };
 
-exports.logout = (req, res) => {
-    res.cookie('token', 'none', {
-        expires: new Date(Date.now() + 10 * 1000),
-        httpOnly: true
-    });
-    res.status(200).json({ success: true, data: {} });
+exports.logout = async (req, res) => {
+    try {
+        const token = extractAuthTokenFromRequest(req);
+        if (token) {
+            try {
+                const decoded = jwt.verify(token, process.env.SECRET_JWT_KEY);
+                const userId = decoded?.id;
+                if (userId) {
+                    await User.findByIdAndUpdate(userId, { isLoggedIn: false });
+                }
+            } catch (_) {
+                // Si el token es inválido/expirado, continuamos con logout de cookie sin romper respuesta.
+            }
+        }
+
+        res.cookie('token', 'none', {
+            expires: new Date(Date.now() + 10 * 1000),
+            httpOnly: true
+        });
+        res.status(200).json({ success: true, data: {} });
+    } catch (error) {
+        console.error("Error en logout:", error);
+        res.status(500).json({ error: "Error al cerrar sesión" });
+    }
 };
 
 // --- Social Login Helpers ---
@@ -343,6 +376,8 @@ exports.socialLogin = async (req, res) => {
             if (!isLinked) {
                 user.providers.push({ name: provider, id: profile.id });
             }
+
+            user.isLoggedIn = true;
 
             await user.save();
             sendTokenResponse(user, 200, res, { pendingDocuments });

@@ -131,6 +131,7 @@ exports.getAllUsers = async (req, res) => {
                     photo: { $first: "$photo" },
                     wallets: { $first: "$wallets" },
                     isActive: { $first: "$isActive" },
+                    isLoggedIn: { $first: "$isLoggedIn" },
                     createdAt: { $first: "$createdAt" },
                     // Reconstruct the stats array
                     stats: {
