@@ -4,8 +4,6 @@ const { OAuth2Client } = require('google-auth-library');
 const axios = require('axios');
 const {
     ensureCurrentLegalAcceptanceForUser,
-    ensureNewUserLegalAcceptance,
-    registerCurrentLegalAcceptanceForNewUser
 } = require("../services/legal/legal.service");
 
 const applyLegalAcceptanceIfRequired = async ({
@@ -350,13 +348,6 @@ exports.socialLogin = async (req, res) => {
             sendTokenResponse(user, 200, res, { pendingDocuments });
 
         } else {
-            const legalValidation = await ensureNewUserLegalAcceptance({
-                legalAcceptancePayload: legalAcceptance
-            });
-            if (!legalValidation.ok) {
-                return res.status(400).json(buildLegalRequiredErrorPayload(legalValidation));
-            }
-
             // Crear nuevo usuario
             const newUser = new User({
                 username: profile.name || `User${Date.now()}`,
@@ -367,12 +358,19 @@ exports.socialLogin = async (req, res) => {
                 isVerified: true // Social login implies verification
             });
             await newUser.save();
-            await registerCurrentLegalAcceptanceForNewUser({
-                userId: newUser._id,
+
+            const legalResolution = await applyLegalAcceptanceIfRequired({
+                user: newUser,
+                legalAcceptancePayload: legalAcceptance,
                 req,
-                source: "social_login"
+                source: 'social_login'
             });
-            sendTokenResponse(newUser, 201, res);
+            const pendingDocuments = resolvePendingDocumentsFromLegalResolution(legalResolution);
+            if (!legalResolution.ok && didClientExplicitlyAcceptLegal(legalAcceptance)) {
+                return res.status(400).json(buildLegalRequiredErrorPayload(legalResolution));
+            }
+
+            sendTokenResponse(newUser, 201, res, { pendingDocuments });
         }
 
     } catch (error) {
@@ -415,14 +413,6 @@ exports.completeSocialLogin = async (req, res) => {
             });
         }
 
-        // Crear usuario nuevo con el email proporcionado
-        const legalValidation = await ensureNewUserLegalAcceptance({
-            legalAcceptancePayload: legalAcceptance
-        });
-        if (!legalValidation.ok) {
-            return res.status(400).json(buildLegalRequiredErrorPayload(legalValidation));
-        }
-
         const newUser = new User({
             username: providerData.name || `User${Date.now()}`,
             email: email,
@@ -433,12 +423,19 @@ exports.completeSocialLogin = async (req, res) => {
         });
 
         await newUser.save();
-        await registerCurrentLegalAcceptanceForNewUser({
-            userId: newUser._id,
+
+        const legalResolution = await applyLegalAcceptanceIfRequired({
+            user: newUser,
+            legalAcceptancePayload: legalAcceptance,
             req,
-            source: "social_login"
+            source: 'social_login'
         });
-        sendTokenResponse(newUser, 201, res);
+        const pendingDocuments = resolvePendingDocumentsFromLegalResolution(legalResolution);
+        if (!legalResolution.ok && didClientExplicitlyAcceptLegal(legalAcceptance)) {
+            return res.status(400).json(buildLegalRequiredErrorPayload(legalResolution));
+        }
+
+        sendTokenResponse(newUser, 201, res, { pendingDocuments });
 
     } catch (error) {
         console.error("Complete Social Login Error:", error);
