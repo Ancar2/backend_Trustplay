@@ -162,6 +162,23 @@ const resolveTopBuyerTierPercent = (lottery, recipientBoxes) => {
 
 const resolveEmergencyPercentsOverride = (payload = {}) => {
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+    const requiredFields = [
+        "winner",
+        "sponsor",
+        "topBuyer",
+        "maxSponsors",
+        "exclusiveNft",
+        "foundingCircle"
+    ];
+    const hasAnyPercentValue = requiredFields.some((field) => {
+        const value = payload[field];
+        if (value === undefined || value === null) return false;
+        if (typeof value === "string" && value.trim() === "") return false;
+        return true;
+    });
+
+    // Soporta payloads heredados que mandan emergencyResolvePercents vacio al usar setWinner.
+    if (!hasAnyPercentValue) return null;
 
     const parsed = {
         winner: toFiniteNumber(payload.winner, NaN),

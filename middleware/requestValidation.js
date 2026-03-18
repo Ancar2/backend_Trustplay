@@ -278,6 +278,17 @@ const validateCloseLotteryBody = (req) => {
                 "exclusiveNft",
                 "foundingCircle"
             ];
+            const hasAnyPercentValue = requiredFields.some((field) => {
+                const value = emergencyResolvePercents[field];
+                if (value === undefined || value === null) return false;
+                if (typeof value === "string" && value.trim() === "") return false;
+                return true;
+            });
+
+            // Soporta payloads heredados que mandan emergencyResolvePercents vacio al usar setWinner.
+            if (!hasAnyPercentValue) {
+                return errors;
+            }
 
             let total = 0;
             requiredFields.forEach((field) => {

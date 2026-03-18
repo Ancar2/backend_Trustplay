@@ -63,6 +63,28 @@ test("close lottery validator rejects invalid txHash", () => {
     assert.ok(errors.includes("txHash debe ser un hash válido de transacción."));
 });
 
+test("close lottery validator ignores empty emergencyResolvePercents object", () => {
+    const req = {
+        body: {
+            txHash: "0x0f9a2a9a140648366e1f5bb8ef93de572627a44d0a5038cf5c58104a5e966536",
+            emergencyResolvePercents: {}
+        }
+    };
+    const errors = validators.closeLotteryBody(req);
+    assert.equal(errors.length, 0);
+});
+
+test("close lottery validator rejects partial emergencyResolvePercents object", () => {
+    const req = {
+        body: {
+            txHash: "0x0f9a2a9a140648366e1f5bb8ef93de572627a44d0a5038cf5c58104a5e966536",
+            emergencyResolvePercents: { winner: 2500 }
+        }
+    };
+    const errors = validators.closeLotteryBody(req);
+    assert.ok(errors.some((error) => error.startsWith("emergencyResolvePercents.")));
+});
+
 test("lottery event schedule validator rejects missing scheduledAt", () => {
     const req = { body: {} };
     const errors = validators.lotteryEventScheduleBody(req);
