@@ -121,6 +121,12 @@ const esquemaLoteria = new mongoose.Schema(
             type: String, // Address of the Lottery owner/creator
             lowercase: true,
         },
+        category: {
+            type: String,
+            enum: ["standard", "premium"],
+            default: "standard",
+            index: true,
+        },
         status: {
             type: String,
             enum: ["Pending", "Active", "Completed"],

@@ -182,6 +182,7 @@ const validateCreateLotteryBody = (req) => {
     const {
         address,
         stableCoin,
+        category,
         year,
         index,
         totalBoxes,
@@ -196,6 +197,12 @@ const validateCreateLotteryBody = (req) => {
     if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
     if (!isNonEmptyString(address)) errors.push("address es requerido.");
     if (!isNonEmptyString(stableCoin)) errors.push("stableCoin es requerido.");
+    if (category !== undefined) {
+        const normalizedCategory = String(category).trim().toLowerCase();
+        if (!["standard", "premium"].includes(normalizedCategory)) {
+            errors.push("category debe ser standard o premium.");
+        }
+    }
 
     if (year !== undefined && !isIntegerLike(year)) errors.push("year debe ser entero.");
     if (index !== undefined && !isIntegerLike(index)) errors.push("index debe ser entero.");

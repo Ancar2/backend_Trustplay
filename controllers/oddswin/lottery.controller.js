@@ -21,6 +21,12 @@ const toValidDate = (value) => {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const EVENT_CATEGORIES = ["standard", "premium"];
+const normalizeLotteryCategory = (value, fallback = "") => {
+    if (typeof value !== "string") return fallback;
+    const normalized = value.trim().toLowerCase();
+    return EVENT_CATEGORIES.includes(normalized) ? normalized : fallback;
+};
 
 const YOUTUBE_VIDEO_ID_REGEX = /^[a-zA-Z0-9_-]{11}$/;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
@@ -444,6 +450,7 @@ exports.createLottery = async (req, res) => {
             ...data,
             address: data.address.toLowerCase(),
             stableCoin: data.stableCoin.toLowerCase(),
+            category: normalizeLotteryCategory(data.category, "standard") || "standard",
             owner: data.owner ? data.owner.toLowerCase() : undefined
         });
 
@@ -459,12 +466,28 @@ exports.createLottery = async (req, res) => {
 // Obtener listado de loterías con filtros opcionales (Año, Estado, Dueño) y Paginación
 exports.getLotteries = async (req, res) => {
     try {
-        const { year, status, owner, page = 1, limit = 20 } = req.query;
+        const { year, status, owner, category, page = 1, limit = 20 } = req.query;
         let matchStage = {};
 
         if (year) matchStage.year = Number(year);
         if (status) matchStage.status = status;
         if (owner) matchStage.owner = owner.toLowerCase();
+        if (category !== undefined) {
+            const normalizedCategory = normalizeLotteryCategory(category);
+            if (!normalizedCategory) {
+                return res.status(400).json({ msj: "category inválida. Usa standard o premium" });
+            }
+            if (normalizedCategory === "standard") {
+                matchStage.$or = [
+                    { category: "standard" },
+                    { category: { $exists: false } },
+                    { category: null },
+                    { category: "" }
+                ];
+            } else {
+                matchStage.category = normalizedCategory;
+            }
+        }
 
         const skip = (Number(page) - 1) * Number(limit);
 
@@ -499,6 +522,18 @@ exports.getLotteries = async (req, res) => {
             // Proyección final para asegurar que usamos el calculado
             {
                 $set: {
+                    category: {
+                        $cond: [
+                            {
+                                $or: [
+                                    { $eq: ["$category", null] },
+                                    { $eq: ["$category", ""] }
+                                ]
+                            },
+                            "standard",
+                            "$category"
+                        ]
+                    },
                     topBuyerBoxes: "$realTopBuyerBoxes",
                     topBuyerInfo: "$$REMOVE",
                     realTopBuyerBoxes: "$$REMOVE"
@@ -529,6 +564,9 @@ exports.getLotteryByAddress = async (req, res) => {
         if (!lottery) {
             return res.status(404).json({ msj: "Lotería no encontrada en ODDSWIN" });
         }
+        if (!lottery.category) {
+            lottery.category = "standard";
+        }
         res.status(200).json(lottery);
     } catch (error) {
         console.error("Error getLotteryByAddress:", error);
@@ -540,12 +578,20 @@ exports.getLotteryByAddress = async (req, res) => {
 exports.updateLotteryMetadata = async (req, res) => {
     try {
         const { address } = req.params;
-        const updates = req.body;
+        const updates = { ...(req.body || {}) };
 
         // Protegemos campos críticos que solo deben cambiar vía Blockchain sync
         delete updates.address;
         delete updates.boxPrice;
         delete updates.totalBoxes;
+
+        if (updates.category !== undefined) {
+            const normalizedCategory = normalizeLotteryCategory(updates.category);
+            if (!normalizedCategory) {
+                return res.status(400).json({ msj: "category inválida. Usa standard o premium" });
+            }
+            updates.category = normalizedCategory;
+        }
 
         const lottery = await Lottery.findOneAndUpdate(
             { address: address.toLowerCase() },
