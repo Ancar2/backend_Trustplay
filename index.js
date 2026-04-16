@@ -155,7 +155,7 @@ const buildApp = ({ apiRouter, trustplayInfoController, isProductionEnv, allowed
         // Si no hay origin, solo se permiten rutas técnicas/publicas explícitas.
         if (!origin) {
             if (isNoOriginPathAllowed(req)) {
-                callback(null, { origin: true, credentials: true, optionsSuccessStatus: 200 });
+                callback(null, { origin: true, credentials: true, optionsSuccessStatus: 200, exposedHeaders: ["RateLimit-Limit", "RateLimit-Remaining", "RateLimit-Reset"] });
                 return;
             }
             callback(new Error("Not allowed by CORS"));
@@ -165,7 +165,7 @@ const buildApp = ({ apiRouter, trustplayInfoController, isProductionEnv, allowed
         // Permite origins explícitamente configurados.
         const normalizedOrigin = normalizeOrigin(origin);
         if (normalizedOrigin && allowedOrigins.includes(normalizedOrigin)) {
-            callback(null, { origin: true, credentials: true, optionsSuccessStatus: 200 });
+            callback(null, { origin: true, credentials: true, optionsSuccessStatus: 200, exposedHeaders: ["RateLimit-Limit", "RateLimit-Remaining", "RateLimit-Reset"] });
             return;
         }
 
@@ -178,7 +178,7 @@ const buildApp = ({ apiRouter, trustplayInfoController, isProductionEnv, allowed
             const requestHostOrigin = normalizeOrigin(`${protocol}://${host}`);
 
             if (requestHostOrigin && requestHostOrigin === normalizedOrigin) {
-                callback(null, { origin: true, credentials: true, optionsSuccessStatus: 200 });
+                callback(null, { origin: true, credentials: true, optionsSuccessStatus: 200, exposedHeaders: ["RateLimit-Limit", "RateLimit-Remaining", "RateLimit-Reset"] });
                 return;
             }
         }
@@ -226,7 +226,7 @@ const buildApp = ({ apiRouter, trustplayInfoController, isProductionEnv, allowed
     app.use((err, req, res, next) => {
         // Si el rechazo vino de CORS, se devuelve 403 en lugar de 500.
         if (err && err.message === "Not allowed by CORS") {
-            return res.status(403).json({title:"Forbidden", detail:"You are not allowed to access this resource.", status :403});
+            return res.status(403).json({ title: "Forbidden", detail: "You are not allowed to access this resource.", status: 403 });
         }
 
         // Cualquier otro error no controlado se registra y responde como error interno.

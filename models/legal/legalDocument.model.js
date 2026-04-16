@@ -32,6 +32,4 @@ const legalDocumentSchema = new mongoose.Schema(
     }
 );
 
-legalDocumentSchema.index({ key: 1 }, { unique: true });
-
 module.exports = mongoose.model("LegalDocument", legalDocumentSchema);

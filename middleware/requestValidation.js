@@ -177,6 +177,19 @@ const validateAddWalletBody = (req) => {
     return errors;
 };
 
+const validateTrustplayAssistantBody = (req) => {
+    const errors = [];
+    const { message } = req.body || {};
+
+    if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
+    if (!isNonEmptyString(message)) errors.push("message es requerido.");
+    if (typeof message === "string" && message.trim().length > 2000) {
+        errors.push("message excede 2000 caracteres.");
+    }
+
+    return errors;
+};
+
 const validateCreateLotteryBody = (req) => {
     const errors = [];
     const {
@@ -741,6 +754,7 @@ module.exports = {
         resetPasswordBody: validateResetPasswordBody,
         resendVerificationBody: validateResendVerificationBody,
         addWalletBody: validateAddWalletBody,
+        trustplayAssistantBody: validateTrustplayAssistantBody,
         createLotteryBody: validateCreateLotteryBody,
         closeLotteryBody: validateCloseLotteryBody,
         lotteryEventScheduleBody: validateLotteryEventScheduleBody,

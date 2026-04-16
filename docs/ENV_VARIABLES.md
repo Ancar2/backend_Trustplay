@@ -73,6 +73,15 @@ Estas variables deben existir al terminar la carga de configuracion (desde `.env
 |---|---|---|---|
 | `RPC_URL_AMOY` | Endpoint RPC para leer eventos y datos on-chain. | `https://rpc-amoy.polygon.technology/` | `services/blockchain.service.js` |
 | `CID_EXCLUSIVE_NFT_METADATA` | CID de respaldo para metadata de NFT exclusivo cuando `tokenURI` no responde o no tiene ruta valida. | `bafybeid3gf5lzb4upo6cpb7hftv7ifganjhtwr7phivtnrfekt7brema2q` | `controllers/oddswin/exclusiveNft.controller.js` |
+| `GEMINI_API_KEY` | API key privada para consumir Gemini solo desde backend. | `AIzaSy...` | `services/trustplay/geminiAssistant.service.js` |
+| `GEMINI_MODEL` | Modelo Gemini unico usado por el asistente del home. | `gemini-2.5-flash-lite` | `services/trustplay/geminiAssistant.service.js` |
+| `GEMINI_MAX_OUTPUT_TOKENS` | Limite de salida del asistente. | `500` | `services/trustplay/geminiAssistant.service.js` |
+| `GEMINI_TEMPERATURE` | Temperatura del modelo para balancear precision y flexibilidad. | `0.5` | `services/trustplay/geminiAssistant.service.js` |
+| `GEMINI_CHAT_RATE_LIMIT_MAX` | Maximo de preguntas por IP en 15 minutos para el chat publico. | `25` | `routes/modules/trustplay.routes.js` |
+| `GEMINI_KNOWLEDGE_CACHE_MINUTES` | Minutos de cache para transcripciones de videos y paginas del GitBook antes de volver a descargarlas. | `30` | `services/trustplay/knowledgeContext.service.js` |
+| `GEMINI_KNOWLEDGE_FETCH_TIMEOUT_MS` | Tiempo maximo por descarga de transcript/pagina del GitBook. | `15000` | `services/trustplay/knowledgeContext.service.js` |
+| `GEMINI_KNOWLEDGE_MAX_ITEMS` | Numero maximo de fuentes relevantes enviadas a Gemini por pregunta. | `4` | `services/trustplay/knowledgeContext.service.js` |
+| `GEMINI_KNOWLEDGE_MAX_CHARS_PER_ITEM` | Recorte maximo por fuente para no saturar el contexto del modelo. | `1800` | `services/trustplay/knowledgeContext.service.js` |
 
 ## Variables para live de YouTube (Lotería de Medellín)
 
@@ -141,6 +150,15 @@ INSTAGRAM_REDIRECT_URI=http://localhost:4200/auth/instagram/callback
 
 RPC_URL_AMOY=https://rpc-amoy.polygon.technology/
 CID_EXCLUSIVE_NFT_METADATA=bafybeid3gf5lzb4upo6cpb7hftv7ifganjhtwr7phivtnrfekt7brema2q
+GEMINI_API_KEY=AIzaSy...
+GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_MAX_OUTPUT_TOKENS=500
+GEMINI_TEMPERATURE=0.5
+GEMINI_CHAT_RATE_LIMIT_MAX=25
+GEMINI_KNOWLEDGE_CACHE_MINUTES=30
+GEMINI_KNOWLEDGE_FETCH_TIMEOUT_MS=15000
+GEMINI_KNOWLEDGE_MAX_ITEMS=4
+GEMINI_KNOWLEDGE_MAX_CHARS_PER_ITEM=1800
 YOUTUBE_API_KEY=AIzaSy...
 YOUTUBE_LOTERIA_MEDELLIN_CHANNEL_ID=UCxxxxxxxxxxxxxxxxxxxxxx
 YOUTUBE_LIVE_CACHE_TTL_SECONDS=600
