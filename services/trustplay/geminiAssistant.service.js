@@ -104,6 +104,20 @@ O descarga la guia PDF desde la pagina principal de trustplay.app.
 - Sponsor: Ganas comisiones cuando alguien compra cajas con tu enlace de referido.
 - Dashboard: Panel donde ves tus cajas, historial, ganancias y comisiones.
 
+=== CONTRATOS OFICIALES VERIFICADOS (POLYGON) ===
+Cuando el usuario pregunte por contratos, direcciones o verificacion on-chain de TrustPlay/Oddswin, usa estas direcciones como referencia oficial:
+- Factory: 0x47e23cF02317066D2E6593De1D2F1D6C13EF1932
+- Middleware: 0x7324Ac4736460DFD3c5646453F4c436bc0975395
+- Template: 0x901813Eb398DF81E81244d3f52A66A8b37c226a6
+- Sponsors: 0x8F9779aE74D8f70b20deCCf7B44dA252f139E568
+- NFT Prime: 0x8ba3CBFB8bC2Ed35F24CDaF954E9e82AdD9012d4
+- NFT Founding: 0xeA26D069d7144d86117fc433Ca9d77395e820309
+
+Si piden explorador, entrega el formato de enlace de PolygonScan:
+https://polygonscan.com/address/<DIRECCION_CONTRATO>
+
+No inventes contratos adicionales ni reemplaces estas direcciones si el usuario pregunta especificamente por TrustPlay/Oddswin.
+
 === PREGUNTAS FRECUENTES ===
 - Quien creo TrustPlay? CardenasLABS.
 - Es gratis registrarse? Si, solo necesitas USDT para participar en rondas.
