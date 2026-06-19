@@ -31,6 +31,7 @@ const onrampConfigSchema = new Schema(
         enabled: { type: Boolean, default: false },
         provider: { type: String, default: 'privy' },
         method: { type: String, default: 'moonpay' },
+        environment: { type: String, default: 'sandbox' },
         defaultFiatCurrency: { type: String, default: 'cop' },
         targetChain: { type: String, default: 'eip155:137' },
         supportedFiatCurrencies: { type: [String], default: [] },

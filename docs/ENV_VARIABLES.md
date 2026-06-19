@@ -115,6 +115,7 @@ Estas variables preparan la arquitectura de wallets, compra directa desde wallet
 | `PRIVY_JWT_PUBLIC_CERTIFICATE` | Certificado X.509 PEM opcional para incluir `x5c` en el JWKS o pegarlo directamente en Privy como `Public certificate`. | `-----BEGIN CERTIFICATE-----...` | `config/env.js`, `services/wallets/privy.service.js` |
 | `PRIVY_JWT_KEY_ID` | `kid` opcional del JWT/JWKS. Si no se define, el backend deriva uno a partir de la clave publica. | `trustplay-privy-rs256-v1` | `services/wallets/privy.service.js` |
 | `PRIVY_WALLET_TYPE` | Tipo de wallet Privy a usar. | `embedded` | `services/system/featureFlags.service.js` |
+| `ONRAMP_ENV` | Entorno del onramp de Privy (`production` o `sandbox`). Permite forzar el onramp productivo aunque la dapp siga en testnet. | `sandbox` | `services/system/featureFlags.service.js`, `controllers/oddswin/config.controller.js`, `Frontend_Trustplay/src/app/features/games/oddswin/services/payments/oddswin-onramp-flow.service.ts` |
 | `META_PIXEL_ENABLED` | Activa Meta Pixel por defecto en el frontend. Puede ser sobrescrito desde admin. | `true` | `services/system/featureFlags.service.js`, `controllers/oddswin/config.controller.js` |
 | `META_PIXEL_ID` | Pixel ID de Meta por defecto. Puede ser sobrescrito desde admin. | `1050949194027732` | `services/system/featureFlags.service.js`, `controllers/oddswin/config.controller.js` |
 | `MIN_POL_BALANCE` | Reserva minima de POL requerida por wallet. | `1` | `services/system/featureFlags.service.js` |
@@ -232,6 +233,7 @@ PRIVY_JWT_KEY_ID=
 PRIVY_FRONTEND_APP_ID=
 PRIVY_FRONTEND_CLIENT_ID=
 PRIVY_WALLET_TYPE=embedded
+ONRAMP_ENV=sandbox
 META_PIXEL_ENABLED=false
 META_PIXEL_ID=
 ```

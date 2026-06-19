@@ -35,6 +35,7 @@ const buildPublicRuntimeSlices = () => {
                 enabled: Boolean(runtimeConfig?.integrations?.onramp?.enabled),
                 provider: normalizeString(runtimeConfig?.integrations?.onramp?.provider) || 'privy',
                 method: normalizeString(runtimeConfig?.integrations?.onramp?.method) || 'moonpay',
+                environment: normalizeString(runtimeConfig?.integrations?.onramp?.environment) || 'sandbox',
                 defaultFiatCurrency: normalizeString(runtimeConfig?.integrations?.onramp?.defaultFiatCurrency) || 'cop',
                 targetChain: normalizeString(runtimeConfig?.integrations?.onramp?.targetChain) || 'eip155:137',
                 supportedFiatCurrencies: Array.isArray(runtimeConfig?.integrations?.onramp?.supportedFiatCurrencies)
@@ -119,6 +120,7 @@ const sanitizePublicIntegrations = (integrations = {}) => ({
         enabled: Boolean(integrations?.onramp?.enabled),
         provider: normalizeString(integrations?.onramp?.provider) || 'privy',
         method: normalizeString(integrations?.onramp?.method) || 'moonpay',
+        environment: normalizeString(integrations?.onramp?.environment) || 'sandbox',
         defaultFiatCurrency: normalizeString(integrations?.onramp?.defaultFiatCurrency) || 'cop',
         targetChain: normalizeString(integrations?.onramp?.targetChain) || 'eip155:137',
         supportedFiatCurrencies: Array.isArray(integrations?.onramp?.supportedFiatCurrencies)

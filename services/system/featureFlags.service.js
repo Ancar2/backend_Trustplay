@@ -20,6 +20,19 @@ const parseNumber = (value, fallback = 0) => {
     return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const parseOnrampEnvironment = (value, fallback = "sandbox") => {
+    const normalized = normalizeString(value).toLowerCase();
+    if (normalized === "production") return "production";
+    if (normalized === "sandbox") return "sandbox";
+    return fallback;
+};
+
+const resolveDefaultOnrampEnvironment = () => (
+    normalizeString(process.env.NODE_ENV).toLowerCase() === "production"
+        ? "production"
+        : "sandbox"
+);
+
 const readEnvConfig = () => ({
     featureFlags: {
         walletIdentityEnabled: parseBoolean(process.env.FEATURE_WALLET_IDENTITY_ENABLED, false),
@@ -48,6 +61,7 @@ const readEnvConfig = () => ({
             enabled: parseBoolean(process.env.ONRAMP, parseBoolean(process.env.FEATURE_ONRAMP_ENABLED, false)),
             provider: normalizeString(process.env.ONRAMP_PROVIDER) || "privy",
             method: normalizeString(process.env.ONRAMP_METHOD) || "moonpay",
+            environment: parseOnrampEnvironment(process.env.ONRAMP_ENV, resolveDefaultOnrampEnvironment()),
             defaultFiatCurrency: normalizeString(process.env.ONRAMP_DEFAULT_FIAT_CURRENCY) || "cop",
             targetChain: normalizeString(process.env.ONRAMP_TARGET_CHAIN) || "eip155:137",
             supportedFiatCurrencies: parseCsv(process.env.ONRAMP_SUPPORTED_FIAT_CURRENCIES),
@@ -86,5 +100,6 @@ module.exports = {
     parseBoolean,
     parseCsv,
     parseNumber,
+    parseOnrampEnvironment,
     normalizeString,
 };
