@@ -61,6 +61,31 @@ const userSchema = new mongoose.Schema(
         lowercase: true,
       },
     ],
+    primaryWallet: {
+      type: String,
+      lowercase: true,
+      trim: true,
+      default: null,
+    },
+    walletProvider: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: "legacy",
+    },
+    walletLinkedAt: {
+      type: Date,
+      default: null,
+    },
+    walletStatus: {
+      type: String,
+      enum: ["legacy", "active", "inactive", "blocked"],
+      default: "legacy",
+    },
+    walletMigrationVersion: {
+      type: Number,
+      default: 0,
+    },
     // Sponsor (dirección de wallet del sponsor)
     sponsor: {
       type: String,
@@ -125,6 +150,7 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
 };
 
 userSchema.index({ wallets: 1 });
+userSchema.index({ primaryWallet: 1 });
 userSchema.index({ "sponsorships.wallet": 1 });
 userSchema.index({ verificationTokenHash: 1 }, { sparse: true });
 userSchema.index({ "phone.e164": 1 });

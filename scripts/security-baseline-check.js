@@ -81,11 +81,6 @@ if (!smtpEmail && !smtpPassword) {
     warnings.push("SMTP no configurado. Registro/verificacion de correo no funcionara.");
 }
 
-const googleClientId = asTrimmed(process.env.GOOGLE_CLIENT_ID);
-if (!googleClientId) {
-    warnings.push("GOOGLE_CLIENT_ID no esta configurado. Login social Google no estara disponible.");
-}
-
 console.log("=== Security Baseline Check (api_Trustplay) ===");
 notes.forEach((item) => console.log(`OK: ${item}`));
 warnings.forEach((item) => console.log(`WARN: ${item}`));

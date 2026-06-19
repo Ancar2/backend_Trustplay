@@ -93,27 +93,25 @@ const validateLoginBody = (req) => {
     return errors;
 };
 
-const validateSocialLoginBody = (req) => {
+const validateWalletLoginChallengeBody = (req) => {
     const errors = [];
-    const { provider, token, code, legalAcceptance } = req.body || {};
-    const allowedProviders = ["google", "facebook", "instagram"];
+    const { walletAddress, provider, walletType, legalAcceptance } = req.body || {};
+    const allowedProviders = ["legacy", "privy", "metamask", "trustwallet", "coinbase", "walletconnect"];
+    const allowedWalletTypes = ["embedded", "external"];
 
     if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
+    if (!isNonEmptyString(walletAddress)) errors.push("walletAddress es requerido.");
+
     if (!isNonEmptyString(provider)) {
         errors.push("provider es requerido.");
-        return errors;
+    } else if (!allowedProviders.includes(String(provider).trim().toLowerCase())) {
+        errors.push("provider no es válido.");
     }
 
-    if (!allowedProviders.includes(provider)) {
-        errors.push("provider no soportado.");
-    }
-
-    if (provider === "instagram") {
-        if (!isNonEmptyString(code) && !isNonEmptyString(token)) {
-            errors.push("instagram requiere code o token.");
-        }
-    } else if (!isNonEmptyString(token)) {
-        errors.push("token es requerido para este provider.");
+    if (!isNonEmptyString(walletType)) {
+        errors.push("walletType es requerido.");
+    } else if (!allowedWalletTypes.includes(String(walletType).trim().toLowerCase())) {
+        errors.push("walletType no es válido.");
     }
 
     if (legalAcceptance !== undefined && !isPlainObject(legalAcceptance)) {
@@ -123,16 +121,104 @@ const validateSocialLoginBody = (req) => {
     return errors;
 };
 
-const validateCompleteSocialLoginBody = (req) => {
+const validateWalletLoginVerifyBody = (req) => {
     const errors = [];
-    const { email, tempToken, legalAcceptance } = req.body || {};
+    const { walletAddress, provider, walletType, signature, challengeToken, privyWalletId, legalAcceptance } = req.body || {};
+    const allowedProviders = ["legacy", "privy", "metamask", "trustwallet", "coinbase", "walletconnect"];
+    const allowedWalletTypes = ["embedded", "external"];
 
     if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
-    if (!isNonEmptyString(email)) errors.push("email es requerido.");
-    if (!isNonEmptyString(tempToken)) errors.push("tempToken es requerido.");
+    if (!isNonEmptyString(walletAddress)) errors.push("walletAddress es requerido.");
+    if (!isNonEmptyString(signature)) errors.push("signature es requerida.");
+    if (!isNonEmptyString(challengeToken)) errors.push("challengeToken es requerido.");
+
+    if (!isNonEmptyString(provider)) {
+        errors.push("provider es requerido.");
+    } else if (!allowedProviders.includes(String(provider).trim().toLowerCase())) {
+        errors.push("provider no es válido.");
+    }
+
+    if (!isNonEmptyString(walletType)) {
+        errors.push("walletType es requerido.");
+    } else if (!allowedWalletTypes.includes(String(walletType).trim().toLowerCase())) {
+        errors.push("walletType no es válido.");
+    }
+
+    if (privyWalletId !== undefined && privyWalletId !== null && typeof privyWalletId !== "string") {
+        errors.push("privyWalletId debe ser string.");
+    }
+
     if (legalAcceptance !== undefined && !isPlainObject(legalAcceptance)) {
         errors.push("legalAcceptance debe ser un objeto.");
     }
+
+    return errors;
+};
+
+const validateWalletLoginCompleteBody = (req) => {
+    const errors = [];
+    const {
+        tempToken,
+        username,
+        email,
+        phone,
+        marketingConsent,
+        legalAcceptance,
+    } = req.body || {};
+
+    if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
+    if (!isNonEmptyString(tempToken)) errors.push("tempToken es requerido.");
+    if (!isNonEmptyString(email)) errors.push("email es requerido.");
+    if (username !== undefined && username !== null && typeof username !== "string") {
+        errors.push("username debe ser string.");
+    }
+    if (phone !== undefined && phone !== null && !isPlainObject(phone)) {
+        errors.push("phone debe ser un objeto.");
+    }
+
+    if (isPlainObject(phone)) {
+        const countryCode = typeof phone.countryCode === "string" ? phone.countryCode.trim() : "";
+        const nationalNumber = typeof phone.nationalNumber === "string" ? phone.nationalNumber.trim() : "";
+
+        if (countryCode && !/^\+[1-9]\d{0,3}$/.test(countryCode)) {
+            errors.push("phone.countryCode no tiene formato válido.");
+        }
+        if (nationalNumber && !/^\d{6,15}$/.test(nationalNumber)) {
+            errors.push("phone.nationalNumber no tiene formato válido.");
+        }
+    }
+
+    if (marketingConsent !== undefined && marketingConsent !== null && !isPlainObject(marketingConsent)) {
+        errors.push("marketingConsent debe ser un objeto.");
+    }
+
+    if (legalAcceptance !== undefined && !isPlainObject(legalAcceptance)) {
+        errors.push("legalAcceptance debe ser un objeto.");
+    }
+
+    return errors;
+};
+
+const validateWalletEmailCodeConfirmBody = (req) => {
+    const errors = [];
+    const { verificationToken, code } = req.body || {};
+
+    if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
+    if (!isNonEmptyString(verificationToken)) errors.push("verificationToken es requerido.");
+    if (!isNonEmptyString(code)) errors.push("code es requerido.");
+    if (isNonEmptyString(code) && !/^\d{6}$/.test(String(code).trim())) {
+        errors.push("code debe tener 6 dígitos.");
+    }
+
+    return errors;
+};
+
+const validateWalletEmailCodeResendBody = (req) => {
+    const errors = [];
+    const { verificationToken } = req.body || {};
+
+    if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
+    if (!isNonEmptyString(verificationToken)) errors.push("verificationToken es requerido.");
 
     return errors;
 };
@@ -173,6 +259,87 @@ const validateAddWalletBody = (req) => {
 
     if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
     if (!isNonEmptyString(walletAddress)) errors.push("walletAddress es requerido.");
+
+    return errors;
+};
+
+const validateWalletLinkBody = (req) => {
+    const errors = [];
+    const { walletAddress, provider, walletType } = req.body || {};
+    const allowedProviders = ["legacy", "privy", "metamask", "trustwallet", "coinbase", "walletconnect"];
+    const allowedWalletTypes = ["embedded", "external"];
+
+    if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
+    if (!isNonEmptyString(walletAddress)) errors.push("walletAddress es requerido.");
+
+    if (provider !== undefined && provider !== null) {
+        const normalizedProvider = String(provider).trim().toLowerCase();
+        if (!normalizedProvider) {
+            errors.push("provider debe ser un string válido.");
+        } else if (!allowedProviders.includes(normalizedProvider)) {
+            errors.push("provider no es válido.");
+        }
+    }
+
+    if (walletType !== undefined && walletType !== null) {
+        const normalizedWalletType = String(walletType).trim().toLowerCase();
+        if (!normalizedWalletType) {
+            errors.push("walletType debe ser un string válido.");
+        } else if (!allowedWalletTypes.includes(normalizedWalletType)) {
+            errors.push("walletType no es válido.");
+        }
+    }
+
+    return errors;
+};
+
+const validateWalletPrimaryBody = (req) => {
+    const errors = [];
+    const { walletAddress } = req.body || {};
+
+    if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
+    if (!isNonEmptyString(walletAddress)) errors.push("walletAddress es requerido.");
+
+    return errors;
+};
+
+const validateWalletOwnershipBody = (req) => {
+    const errors = [];
+    const { walletAddress, signature } = req.body || {};
+
+    if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
+    if (!isNonEmptyString(walletAddress)) errors.push("walletAddress es requerido.");
+    if (!isNonEmptyString(signature)) errors.push("signature es requerida.");
+
+    return errors;
+};
+
+const validateWalletPrivySyncBody = (req) => {
+    const errors = [];
+    const { walletAddress, privyWalletId, walletType, provider } = req.body || {};
+    const allowedWalletTypes = ["embedded"];
+    const allowedProviders = ["privy"];
+
+    if (!isPlainObject(req.body)) errors.push("El body debe ser un objeto JSON válido.");
+    if (!isNonEmptyString(walletAddress)) errors.push("walletAddress es requerido.");
+
+    if (privyWalletId !== undefined && privyWalletId !== null && typeof privyWalletId !== "string") {
+        errors.push("privyWalletId debe ser string.");
+    }
+
+    if (walletType !== undefined && walletType !== null) {
+        const normalizedWalletType = String(walletType).trim().toLowerCase();
+        if (!allowedWalletTypes.includes(normalizedWalletType)) {
+            errors.push("walletType no es válido.");
+        }
+    }
+
+    if (provider !== undefined && provider !== null) {
+        const normalizedProvider = String(provider).trim().toLowerCase();
+        if (!allowedProviders.includes(normalizedProvider)) {
+            errors.push("provider no es válido.");
+        }
+    }
 
     return errors;
 };
@@ -748,12 +915,19 @@ module.exports = {
     validators: {
         registerBody: validateRegisterBody,
         loginBody: validateLoginBody,
-        socialLoginBody: validateSocialLoginBody,
-        completeSocialLoginBody: validateCompleteSocialLoginBody,
+        walletLoginChallengeBody: validateWalletLoginChallengeBody,
+        walletLoginVerifyBody: validateWalletLoginVerifyBody,
+        walletLoginCompleteBody: validateWalletLoginCompleteBody,
+        walletEmailCodeConfirmBody: validateWalletEmailCodeConfirmBody,
+        walletEmailCodeResendBody: validateWalletEmailCodeResendBody,
         forgotPasswordBody: validateForgotPasswordBody,
         resetPasswordBody: validateResetPasswordBody,
         resendVerificationBody: validateResendVerificationBody,
         addWalletBody: validateAddWalletBody,
+        walletLinkBody: validateWalletLinkBody,
+        walletPrimaryBody: validateWalletPrimaryBody,
+        walletOwnershipBody: validateWalletOwnershipBody,
+        walletPrivySyncBody: validateWalletPrivySyncBody,
         trustplayAssistantBody: validateTrustplayAssistantBody,
         createLotteryBody: validateCreateLotteryBody,
         closeLotteryBody: validateCloseLotteryBody,

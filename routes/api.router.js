@@ -6,6 +6,7 @@ const oddswinAdminRoutes = require("./modules/oddswin/admin.routes");
 const oddswinConfigRoutes = require("./modules/oddswin/config.routes");
 const oddswinRoutes = require("./modules/oddswin/oddswin.routes");
 const legalRoutes = require("./modules/legal.routes");
+const paymentsRoutes = require("./modules/payments.routes");
 
 const apiRouter = express.Router();
 
@@ -17,6 +18,7 @@ apiRouter.use(oddswinAdminRoutes);
 apiRouter.use(oddswinConfigRoutes);
 apiRouter.use(oddswinRoutes);
 apiRouter.use(legalRoutes);
+apiRouter.use(paymentsRoutes);
 
 // New game-oriented namespace for future integrations.
 apiRouter.use("/games/oddswin", oddswinConfigRoutes);

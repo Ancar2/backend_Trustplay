@@ -62,6 +62,52 @@ const validateRateLimitConfig = () => {
     }
 };
 
+const validateFeatureFlagsConfig = () => {
+    const flagNames = [
+        "FEATURE_WALLET_IDENTITY_ENABLED",
+        "FEATURE_PRIVY_ENABLED",
+        "FEATURE_EXTERNAL_WALLETS_ENABLED",
+        "FEATURE_BALANCE_GATE_ENABLED",
+        "FEATURE_PURCHASE_ORCHESTRATOR_ENABLED",
+        "FEATURE_OBSERVABILITY_ENABLED",
+        "REQUEST_LOGGING_ENABLED",
+    ];
+
+    flagNames.forEach((name) => {
+        const rawValue = asTrimmed(process.env[name]);
+        if (!rawValue) return;
+        const parsed = asBoolean(rawValue, null);
+        if (parsed === null) {
+            throw new Error(`${name} debe ser true o false.`);
+        }
+    });
+
+    const privyEnabled = asBoolean(process.env.FEATURE_PRIVY_ENABLED, false);
+    if (privyEnabled) {
+        if (!asTrimmed(process.env.PRIVY_APP_ID)) {
+            throw new Error("PRIVY_APP_ID es obligatorio cuando FEATURE_PRIVY_ENABLED=true.");
+        }
+        if (!asTrimmed(process.env.PRIVY_APP_SECRET)) {
+            throw new Error("PRIVY_APP_SECRET es obligatorio cuando FEATURE_PRIVY_ENABLED=true.");
+        }
+
+        const privateKey = asTrimmed(process.env.PRIVY_JWT_PRIVATE_KEY).replace(/\\n/g, "\n");
+        const publicKey = asTrimmed(process.env.PRIVY_JWT_PUBLIC_KEY).replace(/\\n/g, "\n");
+        const publicCertificate = asTrimmed(process.env.PRIVY_JWT_PUBLIC_CERTIFICATE).replace(/\\n/g, "\n");
+
+        if (privateKey && !privateKey.includes("BEGIN")) {
+            throw new Error("PRIVY_JWT_PRIVATE_KEY debe contener una clave PEM valida.");
+        }
+        if (publicKey && !publicKey.includes("BEGIN")) {
+            throw new Error("PRIVY_JWT_PUBLIC_KEY debe contener una clave PEM valida.");
+        }
+        if (publicCertificate && !publicCertificate.includes("BEGIN CERTIFICATE")) {
+            throw new Error("PRIVY_JWT_PUBLIC_CERTIFICATE debe contener un certificado X.509 valido.");
+        }
+    }
+
+};
+
 const validateEdgeGuardConfig = (isProduction) => {
     const edgeAuthEnabled = isProduction
         ? asBoolean(process.env.EDGE_AUTH_ENABLED, true)
@@ -87,6 +133,7 @@ const validateEnv = () => {
     validatePort();
     validateJwtSecret(isProduction);
     validateRateLimitConfig();
+    validateFeatureFlagsConfig();
     validateCorsConfig(isProduction);
     validateSameDomainFlag();
     validateEdgeGuardConfig(isProduction);

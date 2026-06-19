@@ -83,6 +83,40 @@ Estas variables deben existir al terminar la carga de configuracion (desde `.env
 | `GEMINI_KNOWLEDGE_MAX_ITEMS` | Numero maximo de fuentes relevantes enviadas a Gemini por pregunta. | `4` | `services/trustplay/knowledgeContext.service.js` |
 | `GEMINI_KNOWLEDGE_MAX_CHARS_PER_ITEM` | Recorte maximo por fuente para no saturar el contexto del modelo. | `1800` | `services/trustplay/knowledgeContext.service.js` |
 
+## Variables base para Sprint 0
+
+Estas variables preparan la arquitectura de wallets, compra directa desde wallet y observabilidad. Todas quedan desactivadas por defecto salvo `FEATURE_EXTERNAL_WALLETS_ENABLED` y `FEATURE_OBSERVABILITY_ENABLED`, que permiten mantener compatibilidad operativa.
+
+| Variable | Para que sirve | Ejemplo | Donde se usa |
+|---|---|---|---|
+| `FEATURE_WALLET_IDENTITY_ENABLED` | Activa la capa de identidad de wallet por usuario. | `false` | `config/env.js`, `services/system/featureFlags.service.js`, `controllers/oddswin/config.controller.js` |
+| `FEATURE_PRIVY_ENABLED` | Activa la integracion con Privy Embedded Wallets. | `false` | `config/env.js`, `services/system/featureFlags.service.js`, `controllers/oddswin/config.controller.js` |
+| `FEATURE_EXTERNAL_WALLETS_ENABLED` | Activa compatibilidad con wallets externas. | `true` | `config/env.js`, `services/system/featureFlags.service.js`, `controllers/oddswin/config.controller.js` |
+| `FEATURE_BALANCE_GATE_ENABLED` | Activa la verificacion on-chain de saldos antes de habilitar compra. | `false` | `config/env.js`, `services/system/featureFlags.service.js`, `controllers/oddswin/config.controller.js` |
+| `ONRAMP` | Interruptor principal del flujo de recarga con proveedor fiat (`true`/`false`). Si no existe, se usa `FEATURE_ONRAMP_ENABLED`. | `true` | `services/system/featureFlags.service.js`, `controllers/oddswin/config.controller.js`, `controllers/payments.controller.js` |
+| `ONRAMP_PROVIDER` | Proveedor logical del onramp. Para este flujo debe ser `privy`. | `privy` | `services/system/featureFlags.service.js`, `controllers/oddswin/config.controller.js` |
+| `ONRAMP_METHOD` | Método/card provider preferido dentro de Privy. Para tu caso `moonpay`. | `moonpay` | `services/system/featureFlags.service.js`, `controllers/oddswin/config.controller.js` |
+| `FEATURE_PURCHASE_ORCHESTRATOR_ENABLED` | Activa el orquestador de compra sin tocar `buyBoxes()`. | `false` | `config/env.js`, `services/system/featureFlags.service.js`, `controllers/oddswin/config.controller.js` |
+| `FEATURE_OBSERVABILITY_ENABLED` | Activa logging estructurado y observabilidad básica. | `true` | `config/env.js`, `services/system/featureFlags.service.js`, `middleware/requestLogger.js` |
+| `REQUEST_LOGGING_ENABLED` | Habilita o deshabilita logs por request. | `true` | `config/env.js`, `middleware/requestLogger.js` |
+| `LOG_LEVEL` | Nivel de logs estructurados. | `info` | `services/system/logger.service.js`, `middleware/requestLogger.js` |
+| `REQUEST_ID_HEADER` | Header que transporta el identificador de request. | `x-trustplay-request-id` | `middleware/requestLogger.js` |
+| `PRIVY_APP_ID` | App ID de Privy para frontend/backend. | `app_123` | `config/env.js`, `services/system/featureFlags.service.js` |
+| `PRIVY_APP_SECRET` | Secreto del backend de Privy. | `secret_123` | `config/env.js`, `services/system/featureFlags.service.js` |
+| `PRIVY_FRONTEND_APP_ID` | App ID expuesto al frontend si se requiere separar entornos. | `app_123` | `services/system/featureFlags.service.js` |
+| `PRIVY_FRONTEND_CLIENT_ID` | Client ID publico del SDK web de Privy. | `client_123` | `services/system/featureFlags.service.js`, `controllers/oddswin/config.controller.js` |
+| `PRIVY_JWT_SIGNING_SECRET` | Clave HMAC de compatibilidad para firmar el JWT temporal de Privy con `HS256`. Solo mantenla si aun no migras a `RS256`. | `super_secret_hs256` | `services/wallets/privy.service.js` |
+| `PRIVY_JWT_ISSUER` | Valor `iss` del JWT temporal para Privy. Debe coincidir con tu configuracion de Custom JWT Auth en Privy. | `https://api.trustplay.app` | `services/wallets/privy.service.js` |
+| `PRIVY_JWT_AUDIENCE` | Valor `aud` y `aid` del JWT temporal para Privy. Si no se define, usa `PRIVY_APP_ID`. | `app_123` | `config/env.js`, `services/wallets/privy.service.js` |
+| `PRIVY_JWT_PRIVATE_KEY` | Clave privada PEM usada para firmar el bridge token con `RS256`. Si existe, el backend prioriza `RS256` y expone `/.well-known/jwks.json`. | `-----BEGIN PRIVATE KEY-----...` | `config/env.js`, `services/wallets/privy.service.js`, `index.js` |
+| `PRIVY_JWT_PUBLIC_KEY` | Clave publica PEM opcional para construir el JWKS. Si no se define, se deriva desde la privada. | `-----BEGIN PUBLIC KEY-----...` | `config/env.js`, `services/wallets/privy.service.js` |
+| `PRIVY_JWT_PUBLIC_CERTIFICATE` | Certificado X.509 PEM opcional para incluir `x5c` en el JWKS o pegarlo directamente en Privy como `Public certificate`. | `-----BEGIN CERTIFICATE-----...` | `config/env.js`, `services/wallets/privy.service.js` |
+| `PRIVY_JWT_KEY_ID` | `kid` opcional del JWT/JWKS. Si no se define, el backend deriva uno a partir de la clave publica. | `trustplay-privy-rs256-v1` | `services/wallets/privy.service.js` |
+| `PRIVY_WALLET_TYPE` | Tipo de wallet Privy a usar. | `embedded` | `services/system/featureFlags.service.js` |
+| `META_PIXEL_ENABLED` | Activa Meta Pixel por defecto en el frontend. Puede ser sobrescrito desde admin. | `true` | `services/system/featureFlags.service.js`, `controllers/oddswin/config.controller.js` |
+| `META_PIXEL_ID` | Pixel ID de Meta por defecto. Puede ser sobrescrito desde admin. | `1050949194027732` | `services/system/featureFlags.service.js`, `controllers/oddswin/config.controller.js` |
+| `MIN_POL_BALANCE` | Reserva minima de POL requerida por wallet. | `1` | `services/system/featureFlags.service.js` |
+
 ## Variables para live de YouTube (Lotería de Medellín)
 
 | Variable | Para que sirve | Ejemplo | Donde se usa |
@@ -173,6 +207,31 @@ RECONCILE_YEAR_START=2023
 RECONCILE_YEAR_END=9999
 RECONCILE_RPC_TIMEOUT_MS=3000
 RECONCILE_CREATION_SCAN_START_BLOCK=0
+
+FEATURE_WALLET_IDENTITY_ENABLED=false
+FEATURE_PRIVY_ENABLED=false
+FEATURE_EXTERNAL_WALLETS_ENABLED=true
+ONRAMP=false
+FEATURE_PURCHASE_ORCHESTRATOR_ENABLED=false
+FEATURE_OBSERVABILITY_ENABLED=true
+REQUEST_LOGGING_ENABLED=true
+LOG_LEVEL=info
+REQUEST_ID_HEADER=x-trustplay-request-id
+MIN_POL_BALANCE=1
+PRIVY_APP_ID=
+PRIVY_APP_SECRET=
+PRIVY_JWT_SIGNING_SECRET=
+PRIVY_JWT_ISSUER=https://api.trustplay.app
+PRIVY_JWT_AUDIENCE=
+PRIVY_JWT_PRIVATE_KEY=
+PRIVY_JWT_PUBLIC_KEY=
+PRIVY_JWT_PUBLIC_CERTIFICATE=
+PRIVY_JWT_KEY_ID=
+PRIVY_FRONTEND_APP_ID=
+PRIVY_FRONTEND_CLIENT_ID=
+PRIVY_WALLET_TYPE=embedded
+META_PIXEL_ENABLED=false
+META_PIXEL_ID=
 ```
 
 ## Ejemplo de secreto JSON (AWS Secrets Manager)
@@ -187,7 +246,12 @@ RECONCILE_CREATION_SCAN_START_BLOCK=0
   "FRONTEND_URL": "https://trustplay.app",
   "FRONTEND_URLS": "https://trustplay.app,https://www.trustplay.app",
   "TOKEN_EXPIRE": "24h",
-  "RATE_LIMIT_MAX": "2000"
+  "RATE_LIMIT_MAX": "2000",
+  "FEATURE_PRIVY_ENABLED": "false",
+  "FEATURE_EXTERNAL_WALLETS_ENABLED": "true",
+  "FEATURE_OBSERVABILITY_ENABLED": "true",
+  "REQUEST_LOGGING_ENABLED": "true",
+  "MIN_POL_BALANCE": "1"
 }
 ```
 

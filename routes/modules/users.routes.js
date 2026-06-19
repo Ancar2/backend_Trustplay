@@ -1,5 +1,7 @@
 const express = require("express");
 const userController = require("../../controllers/user.controller");
+const walletIdentityController = require("../../controllers/users/walletIdentity.controller");
+const privyController = require("../../controllers/users/privy.controller");
 const authMiddleware = require("../../middleware/jwt");
 const {
     requireSelfOrAdmin,
@@ -13,6 +15,7 @@ const router = express.Router();
 router.get("/users/me", authMiddleware.verifyToken, userController.getMe);
 router.get("/users/sponsor/:wallet", userController.getSponsorInfo);
 router.get("/users/sponsor-by-wallet/:wallet", userController.getSponsorByWallet);
+router.get("/users/wallets", authMiddleware.verifyToken, walletIdentityController.getWallets);
 
 router.get(
     "/users/referrals/:wallet",
@@ -63,10 +66,38 @@ router.post(
     userController.addWallet
 );
 
+router.post(
+    "/users/wallet/link",
+    authMiddleware.verifyToken,
+    validateRequest(validators.walletLinkBody),
+    walletIdentityController.linkWallet
+);
+
+router.post(
+    "/users/wallet/primary",
+    authMiddleware.verifyToken,
+    validateRequest(validators.walletPrimaryBody),
+    walletIdentityController.setPrimary
+);
+
+router.post(
+    "/users/wallet/verify-ownership",
+    authMiddleware.verifyToken,
+    validateRequest(validators.walletOwnershipBody),
+    walletIdentityController.verifyOwnership
+);
+
+router.post(
+    "/users/wallet/privy/sync",
+    authMiddleware.verifyToken,
+    validateRequest(validators.walletPrivySyncBody),
+    privyController.syncWallet
+);
+
 router.delete(
     "/users/wallet/:wallet",
     authMiddleware.verifyToken,
-    userController.removeWallet
+    walletIdentityController.removeWallet
 );
 
 router.put(

@@ -11,6 +11,9 @@ const cookieParser = require("cookie-parser");
 
 // Cargador de variables desde .env local y/o AWS Secrets Manager.
 const { loadSecrets } = require("./loadSecrets");
+const requestLogger = require("./middleware/requestLogger");
+const { createLogger } = require("./services/system/logger.service");
+const { resolveRuntimeConfig } = require("./services/system/featureFlags.service");
 
 // Resuelve la IP real del cliente priorizando proxies como Cloudflare y luego x-forwarded-for.
 const resolveClientIp = (req) => {
@@ -66,6 +69,7 @@ const parseAllowedOrigins = () => {
 };
 
 const PUBLIC_PATH_EXACT_MATCHES = Object.freeze([
+    "/.well-known/jwks.json",
     "/api/health",
     "/share",
     "/api/trustplay/share",
@@ -123,7 +127,14 @@ const resolveEdgeGuardConfig = ({ isProductionEnv }) => {
 };
 
 // Crea y configura la instancia de Express con todos los middlewares y rutas.
-const buildApp = ({ apiRouter, trustplayInfoController, isProductionEnv, allowedOrigins, sameDomainDeployment }) => {
+const buildApp = ({
+    apiRouter,
+    trustplayInfoController,
+    isProductionEnv,
+    allowedOrigins,
+    sameDomainDeployment,
+    privyController,
+}) => {
     const app = express();
 
     // Oculta el header x-powered-by para no exponer tecnología innecesariamente.
@@ -189,7 +200,17 @@ const buildApp = ({ apiRouter, trustplayInfoController, isProductionEnv, allowed
 
     // Habilita CORS y parseo JSON con límite de tamaño.
     app.use(cors(corsOptionsDelegate));
-    app.use(express.json({ limit: "8mb" }));
+    app.use(express.json({
+        limit: "8mb",
+        verify: (req, res, buf) => {
+            if (buf && buf.length) {
+                req.rawBody = Buffer.from(buf);
+            }
+        }
+    }));
+
+    const runtimeConfig = resolveRuntimeConfig();
+    app.use(requestLogger({ enabled: runtimeConfig.observability.requestLoggingEnabled }));
 
     // Guardia de edge: solo permite tráfico que llega con header secreto inyectado por Cloudflare.
     const edgeGuard = resolveEdgeGuardConfig({ isProductionEnv });
@@ -208,6 +229,9 @@ const buildApp = ({ apiRouter, trustplayInfoController, isProductionEnv, allowed
 
     // Ruta publica para compartir salas (ALB puede enrutar /share/* directo al backend).
     app.get("/share/:slug", trustplayInfoController.openShareRoomPage);
+
+    // JWKS publico para que Privy pueda verificar los JWT RS256 emitidos por el backend.
+    app.get("/.well-known/jwks.json", privyController.getJwks);
 
     // Todas las rutas de negocio se montan bajo /api.
     app.use("/api", apiRouter);
@@ -246,9 +270,11 @@ const startServer = async () => {
     const connectionDB = require("./config/db");
     const apiRouter = require("./routes/api.router");
     const trustplayInfoController = require("./controllers/trustplay/trustplayInfo.controller");
+    const privyController = require("./controllers/users/privy.controller");
     const { validateEnv } = require("./config/env");
     const { startOddswinReconcileScheduler } = require("./services/oddswin/reconcile.service");
     const { seedLegalDocuments } = require("./services/legal/legal.service");
+    const { migrateLegacyWallets } = require("./services/wallets/walletIdentity.service");
 
     // Calcula la política de CORS y el modo de despliegue actual.
     const allowedOrigins = parseAllowedOrigins();
@@ -262,6 +288,24 @@ const startServer = async () => {
         isProductionEnv,
         allowedOrigins,
         sameDomainDeployment,
+        privyController,
+    });
+
+    const runtimeConfig = resolveRuntimeConfig();
+    const bootstrapLogger = createLogger("bootstrap");
+    bootstrapLogger.info("runtime_config_loaded", {
+        featureFlags: runtimeConfig.featureFlags,
+        integrations: {
+            privy: {
+                enabled: runtimeConfig.integrations.privy.enabled,
+                walletType: runtimeConfig.integrations.privy.walletType,
+                hasAppId: Boolean(runtimeConfig.integrations.privy.appId),
+            },
+            purchase: {
+                minPolBalance: runtimeConfig.purchase.minPolBalance,
+            },
+        },
+        observability: runtimeConfig.observability,
     });
 
     // Verifica variables críticas antes de abrir tráfico.
@@ -270,6 +314,17 @@ const startServer = async () => {
     await connectionDB();
     // Si no existen documentos legales base, los siembra.
     await seedLegalDocuments();
+    // Migra wallets legacy a la nueva capa de identidad solo cuando la funcionalidad está activa.
+    if (runtimeConfig.featureFlags.walletIdentityEnabled) {
+        try {
+            const migrationResult = await migrateLegacyWallets();
+            bootstrapLogger.info("wallet_identity_migration_completed", migrationResult);
+        } catch (error) {
+            bootstrapLogger.error("wallet_identity_migration_failed", {
+                message: error?.message || "Unknown error",
+            });
+        }
+    }
     // Inicia el scheduler de reconciliación si está habilitado por env.
     startOddswinReconcileScheduler();
 

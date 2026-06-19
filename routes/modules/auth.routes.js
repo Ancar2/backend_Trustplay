@@ -52,16 +52,34 @@ router.post(
     loginController.login
 );
 router.post(
-    "/users/login/social",
+    "/users/login/wallet/challenge",
     authLimiter,
-    validateRequest(validators.socialLoginBody),
-    loginController.socialLogin
+    validateRequest(validators.walletLoginChallengeBody),
+    loginController.walletLoginChallenge
 );
 router.post(
-    "/users/login/social/complete",
+    "/users/login/wallet/verify",
     authLimiter,
-    validateRequest(validators.completeSocialLoginBody),
-    loginController.completeSocialLogin
+    validateRequest(validators.walletLoginVerifyBody),
+    loginController.walletLoginVerify
+);
+router.post(
+    "/users/login/wallet/complete",
+    authLimiter,
+    validateRequest(validators.walletLoginCompleteBody),
+    loginController.completeWalletRegistration
+);
+router.post(
+    "/users/login/wallet/confirm-code",
+    authLimiter,
+    validateRequest(validators.walletEmailCodeConfirmBody),
+    loginController.confirmWalletEmailCode
+);
+router.post(
+    "/users/login/wallet/resend-code",
+    authLimiter,
+    validateRequest(validators.walletEmailCodeResendBody),
+    loginController.resendWalletEmailCode
 );
 router.post("/users/logout", loginController.logout);
 

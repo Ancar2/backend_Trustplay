@@ -215,7 +215,54 @@ const buildPasswordResetEmail = ({ resetUrl, username, expiresInMinutes }) => {
     };
 };
 
+const buildVerificationCodeEmail = ({ username, code, ttlMinutes, title = "Verifica tu correo", intro = "Usa este codigo para confirmar tu correo." }) => {
+    const safeName = username ? `<p style="margin:0 0 10px;"><strong>Hola ${escapeHtml(username)}</strong>,</p>` : "";
+    const ttlLabel = formatMinutesLabel(ttlMinutes);
+    const ttlText = ttlLabel
+        ? `El codigo estara disponible durante ${ttlLabel}.`
+        : "El codigo tiene una vigencia limitada por seguridad.";
+    const safeCode = escapeHtml(code);
+
+    const html = buildLayout({
+        preheader: "Codigo de verificacion para tu cuenta Trustplay.",
+        kicker: "Codigo de verificacion",
+        title,
+        introHtml: `
+            ${safeName}
+            <p style="margin:0 0 12px;">${escapeHtml(intro)}</p>
+            <p style="margin:0;">${escapeHtml(ttlText)}</p>
+            <div style="margin:18px 0 0;padding:18px 16px;border-radius:14px;border:1px solid #82ecff;background:#0b1a28;text-align:center;">
+                <div style="font-family:Arial,Helvetica,sans-serif;font-size:34px;letter-spacing:10px;font-weight:800;color:#82f6ff;">${safeCode}</div>
+            </div>
+        `,
+        ctaLabel: "Abrir Trustplay",
+        ctaUrl: resolveFrontendUrl(),
+        afterCtaHtml: `
+            <p style="margin:0;">Ingresa este codigo en la pantalla de verificacion para continuar.</p>
+        `,
+        securityHtml: "Si no solicitaste este codigo, ignora este correo."
+    });
+
+    const text = [
+        "Trustplay - Codigo de verificacion",
+        "",
+        username ? `Hola ${username},` : "Hola,",
+        intro,
+        `Codigo: ${code}`,
+        ttlText,
+        "",
+        "Si no solicitaste este codigo, ignora este correo."
+    ].join("\n");
+
+    return {
+        subject: "Codigo de Verificacion - Trustplay",
+        html,
+        text
+    };
+};
+
 module.exports = {
     buildVerificationEmail,
-    buildPasswordResetEmail
+    buildPasswordResetEmail,
+    buildVerificationCodeEmail
 };

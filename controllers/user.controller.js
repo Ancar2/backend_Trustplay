@@ -10,6 +10,11 @@ const LegalAcceptance = require("../models/legal/legalAcceptance.model");
 const sendEmail = require("../utils/sendEmail");
 const { buildPasswordResetEmail } = require("../utils/emailTemplates");
 const { getProvider, getContractsConfig } = require("../services/blockchain.service");
+const { isFeatureEnabled } = require("../services/system/featureFlags.service");
+const {
+    linkLegacyWalletToUser,
+    removeWalletIdentity,
+} = require("../services/wallets/walletIdentity.service");
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const LOTTERY_INFO_ABI = [
@@ -574,6 +579,24 @@ exports.addWallet = async (req, res) => {
 
         // Comparación Case-Insensitive
         const walletToAdd = walletAddress.toLowerCase();
+
+        if (isFeatureEnabled("walletIdentityEnabled")) {
+            const linked = await linkLegacyWalletToUser({
+                userId: req.user.id,
+                walletAddress: walletToAdd,
+                source: "legacy_add_wallet_route",
+                provider: "legacy",
+                metadata: {
+                    source: "addWallet_legacy_route",
+                },
+            });
+
+            return res.status(200).json({
+                msj: "Wallet agregada",
+                wallets: linked.user.wallets,
+                primaryWallet: linked.user.primaryWallet || null,
+            });
+        }
 
         // 1. GLOBAL CHECK: Verificar si la wallet ya está vinculada a OTRO usuario
         const existingOwner = await User.findOne({
@@ -2042,6 +2065,19 @@ exports.removeWallet = async (req, res) => {
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ msj: "Usuario no encontrado" });
+        }
+
+        if (isFeatureEnabled("walletIdentityEnabled")) {
+            const result = await removeWalletIdentity({
+                userId,
+                walletAddress: walletToRemove
+            });
+
+            return res.status(200).json({
+                ok: true,
+                msj: "Wallet desvinculada correctamente",
+                wallets: result.snapshot?.legacyWallets || result.user?.wallets || []
+            });
         }
 
         // Verificar si la wallet pertenece al usuario
