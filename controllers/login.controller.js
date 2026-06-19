@@ -475,6 +475,30 @@ const normalizePhoneNationalNumber = (value) => (
     typeof value === "string" ? value.replace(/\D+/g, "") : ""
 );
 
+const normalizePhotoUrl = (value) => {
+    const normalized = typeof value === "string" ? value.trim() : "";
+    return /^https?:\/\//i.test(normalized) ? normalized : "";
+};
+
+const resolveWalletMetadataPhoto = (metadata) => (
+    normalizePhotoUrl(metadata?.photo)
+);
+
+const applyUserPhotoFromWalletMetadata = async (user, metadata) => {
+    if (!user) return false;
+
+    const nextPhoto = resolveWalletMetadataPhoto(metadata);
+    const currentPhoto = normalizePhotoUrl(user.photo);
+
+    if (!nextPhoto || currentPhoto) {
+        return false;
+    }
+
+    user.photo = nextPhoto;
+    await user.save();
+    return true;
+};
+
 const isTrustedWalletLogin = ({ provider, walletType }) => {
     const normalizedProvider = normalizeWalletProvider(provider);
     const normalizedWalletType = normalizeWalletType(walletType);
@@ -760,6 +784,7 @@ exports.walletLoginVerify = async (req, res) => {
                 user.isVerified = true;
                 user.isLoggedIn = true;
                 await user.save();
+                await applyUserPhotoFromWalletMetadata(user, metadata);
 
                 const sessionUser = await User.findById(user._id);
                 if (!sessionUser) {
@@ -804,6 +829,7 @@ exports.walletLoginVerify = async (req, res) => {
                 loginMatchedBy: existingMatch.matchedBy || (isNewUser ? "new_wallet_user" : "existing_wallet_user"),
             },
         });
+        await applyUserPhotoFromWalletMetadata(user, metadata);
 
         const sessionUser = await User.findById(user._id);
         if (!sessionUser) {
@@ -931,6 +957,9 @@ exports.completeWalletRegistration = async (req, res) => {
                     acceptedAt: marketingConsent?.accepted === true || legalAcceptance?.accepted === true ? new Date() : (existingUserByEmail.marketingConsent?.acceptedAt || null),
                     source: "register_form",
                 };
+                if (!normalizePhotoUrl(existingUserByEmail.photo)) {
+                    existingUserByEmail.photo = resolveWalletMetadataPhoto(decoded.metadata);
+                }
                 await existingUserByEmail.save();
             }
 
@@ -950,6 +979,7 @@ exports.completeWalletRegistration = async (req, res) => {
                 existingUserByEmail.isVerified = true;
                 existingUserByEmail.isLoggedIn = true;
                 await existingUserByEmail.save();
+                await applyUserPhotoFromWalletMetadata(existingUserByEmail, decoded.metadata);
 
                 const sessionUser = await User.findById(existingUserByEmail._id);
                 if (!sessionUser) {
@@ -1042,6 +1072,7 @@ exports.completeWalletRegistration = async (req, res) => {
             walletMigrationVersion: 1,
             isLoggedIn: false,
             isVerified: false,
+            photo: resolveWalletMetadataPhoto(decoded.metadata),
             marketingConsent: {
                 accepted: marketingConsent?.accepted === true || legalAcceptance?.accepted === true,
                 acceptedAt: marketingConsent?.accepted === true || legalAcceptance?.accepted === true ? new Date() : null,
@@ -1073,6 +1104,7 @@ exports.completeWalletRegistration = async (req, res) => {
             user.isVerified = true;
             user.isLoggedIn = true;
             await user.save();
+            await applyUserPhotoFromWalletMetadata(user, decoded.metadata);
 
             const sessionUser = await User.findById(user._id);
             if (!sessionUser) {
@@ -1158,6 +1190,7 @@ exports.confirmWalletEmailCode = async (req, res) => {
                     confirmedVia: "email_code_existing_user",
                 },
             });
+            await applyUserPhotoFromWalletMetadata(user, decoded.metadata);
         } else if (!user.isVerified) {
             user.isVerified = true;
         }

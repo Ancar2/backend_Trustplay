@@ -103,7 +103,7 @@ const userSchema = new mongoose.Schema(
     },
     photo: {
       type: String,
-      default: "",
+      default: "https://img.magnific.com/premium-vector/user-profile-person-avatar-identity-login-icon-vector_1277826-982.jpg?w=360",
     },
     isVerified: {
       type: Boolean,
