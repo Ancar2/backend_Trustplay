@@ -46,6 +46,8 @@ const buildPublicRuntimeSlices = () => {
                 minFiatAmountUsd: Number(runtimeConfig?.integrations?.onramp?.minFiatAmountUsd || 20),
                 estimatedFeeUsd: Number(runtimeConfig?.integrations?.onramp?.estimatedFeeUsd || 3),
                 polBuffer: Number(runtimeConfig?.integrations?.onramp?.polBuffer || 2),
+                tokenAddress: normalizeString(runtimeConfig?.integrations?.onramp?.tokenAddress),
+                tokenSymbol: normalizeString(runtimeConfig?.integrations?.onramp?.tokenSymbol),
                 referrerDomain: normalizeString(runtimeConfig?.integrations?.onramp?.referrerDomain),
             },
         },
@@ -128,6 +130,8 @@ const sanitizePublicIntegrations = (integrations = {}) => ({
         minFiatAmountUsd: Number(integrations?.onramp?.minFiatAmountUsd || 20),
         estimatedFeeUsd: Number(integrations?.onramp?.estimatedFeeUsd || 3),
         polBuffer: Number(integrations?.onramp?.polBuffer || 2),
+        tokenAddress: normalizeString(integrations?.onramp?.tokenAddress),
+        tokenSymbol: normalizeString(integrations?.onramp?.tokenSymbol),
         referrerDomain: normalizeString(integrations?.onramp?.referrerDomain),
     },
 });

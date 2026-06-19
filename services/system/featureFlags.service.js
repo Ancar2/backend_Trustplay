@@ -55,6 +55,8 @@ const readEnvConfig = () => ({
             minFiatAmountUsd: parseNumber(process.env.ONRAMP_MIN_FIAT_AMOUNT_USD, 20),
             estimatedFeeUsd: parseNumber(process.env.ONRAMP_ESTIMATED_FEE_USD, 3),
             polBuffer: parseNumber(process.env.ONRAMP_POL_BUFFER, 2),
+            tokenAddress: normalizeString(process.env.ONRAMP_TOKEN_ADDRESS),
+            tokenSymbol: normalizeString(process.env.ONRAMP_TOKEN_SYMBOL),
             referrerDomain: normalizeString(process.env.ONRAMP_REFERRER_DOMAIN),
         },
     },

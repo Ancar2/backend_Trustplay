@@ -26,6 +26,25 @@ const privyConfigSchema = new Schema(
     { _id: false }
 );
 
+const onrampConfigSchema = new Schema(
+    {
+        enabled: { type: Boolean, default: false },
+        provider: { type: String, default: 'privy' },
+        method: { type: String, default: 'moonpay' },
+        defaultFiatCurrency: { type: String, default: 'cop' },
+        targetChain: { type: String, default: 'eip155:137' },
+        supportedFiatCurrencies: { type: [String], default: [] },
+        supportedAssets: { type: [String], default: [] },
+        minFiatAmountUsd: { type: Number, default: 20 },
+        estimatedFeeUsd: { type: Number, default: 3 },
+        polBuffer: { type: Number, default: 2 },
+        tokenAddress: { type: String, default: '' },
+        tokenSymbol: { type: String, default: '' },
+        referrerDomain: { type: String, default: '' }
+    },
+    { _id: false }
+);
+
 const metaPixelConfigSchema = new Schema(
     {
         enabled: { type: Boolean, default: false },
@@ -54,6 +73,7 @@ const globalConfigSchema = new Schema({
     featureFlags: { type: featureFlagsSchema, default: () => ({}) },
     integrations: {
         privy: { type: privyConfigSchema, default: () => ({}) },
+        onramp: { type: onrampConfigSchema, default: () => ({}) },
         metaPixel: { type: metaPixelConfigSchema, default: () => ({}) },
     },
     observability: { type: observabilitySchema, default: () => ({}) },
